@@ -63,7 +63,7 @@ function pickError(error) {
 }
 
 /**
- * node:test emits a "test:summary" per file plus one aggregate at the end;
+ * node:test emits a "test:summary" per file plus one aggregate at the end.
  * the aggregate is the only one without a "file" attached.
  * @param {NodeTestSummaryEvent["data"]} data
  * @returns {boolean}
@@ -73,9 +73,7 @@ function isAggregateSummary(data) {
 }
 
 /**
- * The node:test custom reporter itself (`--test-reporter=<this file>`). Runs inside the
- * spawned workspace's process; only test:fail and the aggregate test:summary are kept,
- * each re-emitted as one JSON line on stdout for the parent process to read back.
+ * The node:test custom reporter. Runs inside the spawned workspace's process.
  * @param {AsyncIterable<NodeTestEvent>} source
  * @returns {AsyncGenerator<string>}
  */
@@ -113,9 +111,7 @@ export default async function* testEventReporter(source) {
 
 /**
  * Parses the JSON lines emitted by {@link testEventReporter} back out of a workspace's
- * captured stdout, running in the parent process. Lines that aren't valid JSON (npm noise,
- * or a workspace script that never runs node:test at all) are silently skipped rather than
- * treated as a parsing error.
+ * captured stdout, running in the parent process.
  * @param {string} output
  * @returns {{ counts: ReportedCounts | null, failingTests: string[], failures: ReportedFailure[] }}
  */

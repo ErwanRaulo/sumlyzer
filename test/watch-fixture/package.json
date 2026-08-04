@@ -1,0 +1,8 @@
+{
+  "name": "watch-fixture",
+  "private": true,
+  "workspaces": [
+    "workspaces/base",
+    "workspaces/dependent"
+  ]
+}

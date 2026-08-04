@@ -7,6 +7,8 @@ import path from "node:path";
 import { glob } from "glob";
 
 import { buildJunitReport } from "./junit.mjs";
+import { buildDependentsGraph, expandWithDependents } from "./graph.mjs";
+import { watchWorkspaces } from "./watch.mjs";
 import { red, dim, workspaceName, githubGroupSyntax, printWorkspaceResult, printSummary, reportOutcome } from "./reporter.mjs";
 import { NoWorkspacesError, InvalidPackageJsonError, WorkspaceLaunchError } from "./errors.mjs";
 import { hasOwnReporter, prepareEnv, parseResult } from "./runners/nodeTest.mjs";
@@ -389,7 +391,82 @@ async function writeJunitReport(root, junitPath, results) {
   }
 }
 
-export async function main({ root, scriptName, ff, junitPath, concurrency = 1, changed = false, ref }) {
+async function runOnce({ root, workspacesToRun, scriptName, scriptCommands, ff, junitPath, concurrency }) {
+  const junitDir = junitPath ? await mkdtemp(path.join(tmpdir(), "sumlyzer-junit-")) : null;
+
+  let completed, skipped;
+  try {
+    ({ completed, skipped } = await runWorkspaces({ root, workspacesToRun, scriptName, scriptCommands, ff, junitDir, concurrency }));
+
+    if (junitDir) {
+      await writeJunitReport(root, junitPath, completed);
+    }
+  }
+  finally {
+    if (junitDir) {
+      await rm(junitDir, { recursive: true, force: true });
+    }
+  }
+
+  printSummary(completed, skipped);
+  reportOutcome(completed);
+}
+
+// A workspace's own test run can write files inside itself (e.g. coverage, though that's
+// already ignored) shortly after it exits. Without this, those trailing writes get picked
+// up as a fresh change and the workspace re-runs itself indefinitely.
+const SETTLE_COOLDOWN_MS = 500;
+
+async function handleWatchChange({ changedPaths, dependentsGraph, settling, workspacesToRun, root, scriptName, scriptCommands, ff, concurrency }) {
+  const affected = [...expandWithDependents(changedPaths, dependentsGraph)]
+    .filter((wsPath) => workspacesToRun.includes(wsPath));
+
+  if (affected.length === 0) {
+    return;
+  }
+
+  const changedNames = [...changedPaths].map(workspaceName).join(", ");
+  const affectedNames = affected.map(workspaceName).join(", ");
+  console.log(dim(`\n[watch] change detected in ${changedNames} → re-running: ${affectedNames}\n`));
+
+  for (const wsPath of affected) {
+    settling.add(wsPath);
+  }
+  try {
+    await runOnce({ root, workspacesToRun: affected, scriptName, scriptCommands, ff, junitPath: undefined, concurrency });
+  }
+  finally {
+    setTimeout(() => {
+      for (const wsPath of affected) {
+        settling.delete(wsPath);
+      }
+    }, SETTLE_COOLDOWN_MS).unref();
+  }
+}
+
+function runWatchMode({ root, workspaces, workspacesToRun, scriptName, scriptCommands, ff, concurrency }) {
+  const dependentsGraph = buildDependentsGraph(root, workspaces);
+  const settling = new Set();
+
+  const watcher = watchWorkspaces({
+    root,
+    workspaces,
+    isSuppressed: (wsPath) => settling.has(wsPath),
+    onChange: (changedPaths) => handleWatchChange({ changedPaths, dependentsGraph, settling, workspacesToRun, root, scriptName, scriptCommands, ff, concurrency })
+  });
+
+  return new Promise((resolve) => {
+    const stop = () => {
+      console.log(dim("\n[watch] stopping.\n"));
+      watcher.close();
+      resolve();
+    };
+    process.once("SIGINT", stop);
+    process.once("SIGTERM", stop);
+  });
+}
+
+export async function main({ root, scriptName, ff, junitPath, concurrency = 1, changed = false, ref, watch = false }) {
 
   const { workspaces } = readJson(path.join(root, "package.json"));
 
@@ -427,22 +504,9 @@ export async function main({ root, scriptName, ff, junitPath, concurrency = 1, c
     }
   }
 
-  const junitDir = junitPath ? await mkdtemp(path.join(tmpdir(), "sumlyzer-junit-")) : null;
+  await runOnce({ root, workspacesToRun: finalWorkspacesToRun, scriptName, scriptCommands, ff, junitPath, concurrency });
 
-  let completed, skipped;
-  try {
-    ({ completed, skipped } = await runWorkspaces({ root, workspacesToRun: finalWorkspacesToRun, scriptName, scriptCommands, ff, junitDir, concurrency }));
-
-    if (junitDir) {
-      await writeJunitReport(root, junitPath, completed);
-    }
+  if (watch) {
+    await runWatchMode({ root, workspaces: resolvedWorkspaces, workspacesToRun: finalWorkspacesToRun, scriptName, scriptCommands, ff, concurrency });
   }
-  finally {
-    if (junitDir) {
-      await rm(junitDir, { recursive: true, force: true });
-    }
-  }
-
-  printSummary(completed, skipped);
-  reportOutcome(completed);
 }
