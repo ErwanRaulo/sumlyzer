@@ -21,6 +21,7 @@ try {
       concurrency: { type: "string", short: "c", default: "1" },
       changed: { type: "boolean", default: false },
       ref: { type: "string" },
+      watch: { type: "boolean", short: "w", default: false },
       help: { type: "boolean", short: "h", default: false }
     }
   }));
@@ -49,6 +50,11 @@ if (args.ref && !args.changed) {
   process.exit(1);
 }
 
+if (args.watch && args.junit) {
+  console.info(`--watch and --junit can't be combined. Run "sumlyzer --help" for usage.`);
+  process.exit(1);
+}
+
 if (args.help) {
   console.log(`sumlyzer [options]
 
@@ -63,6 +69,9 @@ Options:
   -c, --concurrency <n> run up to <n> workspaces at once (default: 1)
   --changed             only run workspaces with changes (git ref auto-detected, see --ref)
   --ref <ref>           git ref to diff against for --changed (default: auto-detect)
+  -w, --watch           re-run on file change, only for changed workspaces
+                         and the ones that depend on them (can't be combined
+                         with --junit)
   -h, --help            show this help
 `);
   process.exit(0);
@@ -76,7 +85,8 @@ try {
     junitPath: args.junit,
     concurrency,
     changed: args.changed,
-    ref: args.ref
+    ref: args.ref,
+    watch: args.watch
   });
 }
 catch (error) {

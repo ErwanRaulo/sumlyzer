@@ -1,0 +1,10 @@
+{
+  "name": "dependent",
+  "private": true,
+  "dependencies": {
+    "base": "*"
+  },
+  "scripts": {
+    "test": "node run.mjs"
+  }
+}

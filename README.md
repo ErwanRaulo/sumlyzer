@@ -43,6 +43,7 @@ Run from the root of an npm workspaces project.
 | `--changed` | off | only run workspaces with changed files |
 | `--junit <path>` | off | write an aggregated JUnit XML report |
 | `--ref <ref>` | auto-detect | git ref to diff against for `--changed` |
+| `-w, --watch` | off | re-run on file change (can't be combined with `--junit`) |
 | `-h, --help` | | print usage |
 
 Exit code is `1` if any workspace fails, `0` otherwise — safe to drop straight into CI.
@@ -65,6 +66,7 @@ Exit code is `1` if any workspace fails, `0` otherwise — safe to drop straight
 - **GitHub Actions**: on `GITHUB_ACTIONS=true`, each workspace's output is auto-wrapped in a collapsible `::group::` block. No other CI provider has folding support yet.
 - **Concurrency** (`--concurrency <n>`): workspaces finish in whatever order they complete, so output interleaves. With `--ff`, only workspaces that haven't started yet are skipped — in-flight ones run to completion.
 - **Changed workspaces** (`--changed`): maps changed files to the workspace directory containing them. Ref auto-detection: uncommitted changes → diff against `HEAD`; clean tree with upstream → merge-base with upstream; clean tree with no upstream → `HEAD`.
+- **Watch mode** (`--watch`): runs once, then keeps watching the workspaces directories. Re-runs the workspace that changed and Whatever else, in the same project, declares it as a `dependencies`/`devDependencies` entry . `node_modules`, `.git`, `coverage`, and dotfiles are ignored. Stop with `Ctrl+C`. Not compatible with `--junit`.
 - Own `--test-reporter` in a workspace's script is detected ahead of time and that workspace is skipped, to avoid colliding with sumlyzer's own reporter.
 
 npm doesn't have native fail-fast on `--workspaces` yet — discussed in
@@ -72,10 +74,6 @@ npm doesn't have native fail-fast on `--workspaces` yet — discussed in
 [npm/rfcs#602](https://github.com/npm/rfcs/issues/602) (closed), see also this
 [Stack Overflow answer](https://stackoverflow.com/questions/71300870/npm-workspace-command-does-not-stop-executing-when-command-fails-for-a-workspace/79989284#79989284).
 Sumlyzer's `--ff` gets you there in the meantime.
-
-## Roadmap
-
-**Watch mode** — walk the workspace dependency graph so a change in one workspace also re-runs the ones that depend on it.
 
 ## Contributing
 
