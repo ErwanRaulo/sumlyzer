@@ -121,6 +121,7 @@ describe("sumlyzer CLI behaviors", () => {
     assert.match(stdout, /-c, --concurrency <n>/);
     assert.match(stdout, /--changed\b/);
     assert.match(stdout, /--ref <ref>/);
+    assert.match(stdout, /-w, --watch/);
     assert.match(stdout, /-h, --help/);
   });
 
@@ -242,6 +243,19 @@ describe("sumlyzer CLI behaviors", () => {
       (error) => {
         assert.equal(error.code, 1);
         assert.match(error.stdout, /--concurrency must be a positive integer/);
+        assert.match(error.stdout, /sumlyzer --help/);
+        assert.doesNotMatch(error.stdout, /at ModuleJob|node:internal/);
+        return true;
+      }
+    );
+  });
+
+  it("rejects --watch combined with --junit instead of starting an unclear run", async () => {
+    await assert.rejects(
+      execFileAsync("node", [BIN, "--watch", "--junit", "report.xml"], { cwd: PROJECT_WITH_WORKSPACES }),
+      (error) => {
+        assert.equal(error.code, 1);
+        assert.match(error.stdout, /--watch and --junit can't be combined/);
         assert.match(error.stdout, /sumlyzer --help/);
         assert.doesNotMatch(error.stdout, /at ModuleJob|node:internal/);
         return true;
