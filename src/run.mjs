@@ -2,21 +2,24 @@ import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 import { buildJunitReport } from "./junit.mjs";
-import { parseTestCounts, parseFailingTests, stripNpmNoise, extractFailureDetails } from "./parseOutput.mjs";
+import { stripNpmNoise } from "./parseOutput.mjs";
+import { parseReporterEvents, renderFailureRecap, renderSummaryText } from "./testEventReporter.mjs";
 import { red, dim, workspaceName, githubGroupSyntax, printWorkspaceResult, printSummary, reportOutcome } from "./reporter.mjs";
 
-const SPEC_REPORTER_FLAGS = "--test-reporter=spec --test-reporter-destination=stdout";
+const TEST_EVENT_REPORTER_PATH = fileURLToPath(new URL("./testEventReporter.mjs", import.meta.url));
 
-export function envWithSpecReporter(env, junitDestPath) {
+export function envWithTestReporter(env, junitDestPath) {
   const existing = env.NODE_OPTIONS ? `${env.NODE_OPTIONS} ` : "";
+  const testReporterFlags = `--test-reporter=${TEST_EVENT_REPORTER_PATH} --test-reporter-destination=stdout`;
   const junitFlags = junitDestPath ? ` --test-reporter=junit --test-reporter-destination=${junitDestPath}` : "";
   // Drop NODE_TEST_CONTEXT: if sumlyzer itself is invoked from inside a node:test run, this var would otherwise leak.
   const rest = { ...env };
   delete rest.NODE_TEST_CONTEXT;
-  return { ...rest, NODE_OPTIONS: `${existing}${SPEC_REPORTER_FLAGS}${junitFlags}` };
+  return { ...rest, NODE_OPTIONS: `${existing}${testReporterFlags}${junitFlags}` };
 }
 
 // Rethink this synchronous approach in case of very large package.json files, or huge amount of workspaces, 
@@ -37,12 +40,11 @@ function listEligibleWorkspaces(root, workspaces, scriptName) {
   });
 }
 
-async function runWorkspaceScript(root, wsPath, scriptName, junitDestPath) {
-  const start = Date.now();
+async function captureWorkspaceOutput(root, wsPath, scriptName, junitDestPath) {
   const options = {
     cwd: root,
     shell: process.platform === "win32",
-    env: envWithSpecReporter(process.env, junitDestPath)
+    env: envWithTestReporter(process.env, junitDestPath)
   };
 
   const child = spawn("npm", ["run", scriptName, "--workspace=" + wsPath], options);
@@ -57,20 +59,37 @@ async function runWorkspaceScript(root, wsPath, scriptName, junitDestPath) {
     child.on("close", (code, signal) => resolve(code ?? (signal ? 1 : 0)));
   });
 
-  const output = stripNpmNoise(Buffer.concat(stdoutChunks).toString("utf8") + Buffer.concat(stderrChunks).toString("utf8"));
+  return {
+    exitCode,
+    stdout: Buffer.concat(stdoutChunks).toString("utf8"),
+    stderr: Buffer.concat(stderrChunks).toString("utf8")
+  };
+}
 
-  const [, failureSection] = output.split("✖ failing tests:");
+function buildWorkspaceResult(wsPath, junitDestPath, durationMs, { exitCode, stdout, stderr }) {
+  const { counts, failingTests, failures } = parseReporterEvents(stdout);
+
+  // Workspaces that don't run through node:test never emit our JSON events; fall
+  // back to their raw (npm-noise-stripped) output so failures are still visible.
+  const fallbackOutput = stripNpmNoise(stdout + stderr).trim();
+  const failureRecap = failures.length > 0 ? renderFailureRecap(failures) : null;
 
   return {
     wsPath,
     exitCode,
-    failureDetails: exitCode === 0 ? null : extractFailureDetails(output, failureSection),
-    durationMs: Date.now() - start,
-    counts: parseTestCounts(output),
-    failingTests: parseFailingTests(failureSection),
+    failureDetails: exitCode === 0 ? null : (failureRecap ?? fallbackOutput),
+    durationMs,
+    counts,
+    failingTests,
     junitDestPath,
-    rawOutput: output
+    rawOutput: counts ? [renderSummaryText(counts), failureRecap].filter(Boolean).join("\n\n") : fallbackOutput
   };
+}
+
+async function runWorkspaceScript(root, wsPath, scriptName, junitDestPath) {
+  const start = Date.now();
+  const captured = await captureWorkspaceOutput(root, wsPath, scriptName, junitDestPath);
+  return buildWorkspaceResult(wsPath, junitDestPath, Date.now() - start, captured);
 }
 
 async function collectJunitEntries(results) {

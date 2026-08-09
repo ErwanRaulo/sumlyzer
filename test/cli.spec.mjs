@@ -259,7 +259,7 @@ describe("sumlyzer run behavior", () => {
     assert.match(stdout, /::group::✓ pass-ws.*\(3\/3 tests\)/);
     assert.match(stdout, /ℹ tests 3/); 
     assert.match(stdout, /::group::✗ fail-ws.*\(2\/4 tests\)/);
-    assert.match(stdout, /✖ some assertion \(12\.3ms\)/);
+    assert.match(stdout, /✖ some assertion \(\d+(\.\d+)?ms\)/);
     assert.match(stdout, /::endgroup::/);
 
     // the plain-format markers must NOT appear.
