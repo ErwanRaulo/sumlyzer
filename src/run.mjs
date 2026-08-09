@@ -1,15 +1,12 @@
-import { execFile } from "node:child_process";
+import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { promisify } from "node:util";
 import path from "node:path";
 
 import { buildJunitReport } from "./junit.mjs";
 import { parseTestCounts, parseFailingTests, stripNpmNoise, extractFailureDetails } from "./parseOutput.mjs";
 import { red, dim, workspaceName, githubGroupSyntax, printWorkspaceResult, printSummary, reportOutcome } from "./reporter.mjs";
-
-const execFileAsync = promisify(execFile);
 
 const SPEC_REPORTER_FLAGS = "--test-reporter=spec --test-reporter-destination=stdout";
 
@@ -45,23 +42,22 @@ async function runWorkspaceScript(root, wsPath, scriptName, junitDestPath) {
   const options = {
     cwd: root,
     shell: process.platform === "win32",
-    maxBuffer: 20 * 1024 * 1024,
     env: envWithSpecReporter(process.env, junitDestPath)
   };
 
-  let exitCode = 0;
-  let output;
-  try {
-    const { stdout, stderr } = await execFileAsync("npm", ["run", scriptName, "--workspace=" + wsPath], options);
-    output = stripNpmNoise(stdout + stderr);
-  }
-  catch (error) {
-    if (typeof error.code !== "number") {
-      throw error;
-    }
-    exitCode = error.code;
-    output = stripNpmNoise((error.stdout ?? "") + (error.stderr ?? ""));
-  }
+  const child = spawn("npm", ["run", scriptName, "--workspace=" + wsPath], options);
+  const stdoutChunks = [];
+  const stderrChunks = [];
+
+  child.stdout.on("data", (chunk) => stdoutChunks.push(chunk));
+  child.stderr.on("data", (chunk) => stderrChunks.push(chunk));
+
+  const exitCode = await new Promise((resolve, reject) => {
+    child.on("error", reject);
+    child.on("close", (code, signal) => resolve(code ?? (signal ? 1 : 0)));
+  });
+
+  const output = stripNpmNoise(Buffer.concat(stdoutChunks).toString("utf8") + Buffer.concat(stderrChunks).toString("utf8"));
 
   const [, failureSection] = output.split("✖ failing tests:");
 
