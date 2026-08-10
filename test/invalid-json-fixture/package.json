@@ -1,0 +1,9 @@
+{
+  "name": "invalid-json-fixture",
+  "private": true,
+  "workspaces": [
+    "workspaces/broken-ws",
+    "workspaces/broken-ws-2",
+    "workspaces/pass-ws"
+  ]
+}

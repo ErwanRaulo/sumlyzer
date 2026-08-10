@@ -1,0 +1,7 @@
+{
+  "name": "pass-ws",
+  "private": true,
+  "scripts": {
+    "test": "node --test \"./test/*.spec.mjs\""
+  }
+}

@@ -37,16 +37,23 @@ export function hasOwnTestReporter(scriptCommand) {
 function listEligibleWorkspaces(root, workspaces, scriptName) {
   const eligible = [];
   const ownReporterConflicts = [];
+  const invalidPackageJson = [];
 
   for (const wsPath of workspaces) {
     const pkgFile = path.join(root, wsPath, "package.json");
-    let script;
+    let pkg;
     try {
-      script = readJson(pkgFile).scripts?.[scriptName];
+      pkg = readJson(pkgFile);
     }
-    catch {
+    catch (error) {
+      if (error.code === "ENOENT") {
+        continue;
+      }
+      invalidPackageJson.push({ wsPath, message: error.message });
       continue;
     }
+
+    const script = pkg.scripts?.[scriptName];
     if (!script) {
       continue;
     }
@@ -58,7 +65,7 @@ function listEligibleWorkspaces(root, workspaces, scriptName) {
     }
   }
 
-  return { eligible, ownReporterConflicts };
+  return { eligible, ownReporterConflicts, invalidPackageJson };
 }
 
 async function captureWorkspaceOutput(root, wsPath, scriptName, junitDestPath) {
@@ -205,7 +212,15 @@ export async function main({ root, scriptName, ff, junitPath, concurrency = 1 })
     process.exit(1);
   }
 
-  const { eligible: workspacesToRun, ownReporterConflicts } = listEligibleWorkspaces(root, workspaces, scriptName);
+  const { eligible: workspacesToRun, ownReporterConflicts, invalidPackageJson } = listEligibleWorkspaces(root, workspaces, scriptName);
+
+  if (invalidPackageJson.length > 0) {
+    for (const { wsPath, message } of invalidPackageJson) {
+      console.error(red(`✗ ${workspaceName(wsPath)}: could not read its package.json (${message})`));
+    }
+
+    process.exit(1);
+  }
 
   for (const wsPath of ownReporterConflicts) {
     console.log(dim(`⊘ ${workspaceName(wsPath)}: skipped, own --test-reporter detected in its "${scriptName}" script`));
