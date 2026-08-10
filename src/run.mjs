@@ -28,16 +28,37 @@ function readJson(file) {
   return JSON.parse(readFileSync(file, "utf8"));
 }
 
+const OWN_TEST_REPORTER_FLAG = /--test-reporter(?!-destination)\b/;
+
+export function hasOwnTestReporter(scriptCommand) {
+  return OWN_TEST_REPORTER_FLAG.test(scriptCommand);
+}
+
 function listEligibleWorkspaces(root, workspaces, scriptName) {
-  return workspaces.filter((wsPath) => {
+  const eligible = [];
+  const ownReporterConflicts = [];
+
+  for (const wsPath of workspaces) {
     const pkgFile = path.join(root, wsPath, "package.json");
+    let script;
     try {
-      return Boolean(readJson(pkgFile).scripts?.[scriptName]);
+      script = readJson(pkgFile).scripts?.[scriptName];
     }
     catch {
-      return false;
+      continue;
     }
-  });
+    if (!script) {
+      continue;
+    }
+    if (hasOwnTestReporter(script)) {
+      ownReporterConflicts.push(wsPath);
+    }
+    else {
+      eligible.push(wsPath);
+    }
+  }
+
+  return { eligible, ownReporterConflicts };
 }
 
 async function captureWorkspaceOutput(root, wsPath, scriptName, junitDestPath) {
@@ -184,7 +205,12 @@ export async function main({ root, scriptName, ff, junitPath, concurrency = 1 })
     process.exit(1);
   }
 
-  const workspacesToRun = listEligibleWorkspaces(root, workspaces, scriptName);
+  const { eligible: workspacesToRun, ownReporterConflicts } = listEligibleWorkspaces(root, workspaces, scriptName);
+
+  for (const wsPath of ownReporterConflicts) {
+    console.log(dim(`⊘ ${workspaceName(wsPath)}: skipped, own --test-reporter detected in its "${scriptName}" script`));
+  }
+
   const junitDir = junitPath ? await mkdtemp(path.join(tmpdir(), "sumlyzer-junit-")) : null;
 
   let results;

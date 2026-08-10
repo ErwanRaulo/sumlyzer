@@ -29,11 +29,16 @@ Sumlyzer gives you all those possibilities and even more like concurrency or JUn
 This tool is intentionally narrow: **npm workspaces** running **`node:test`**.
 
 It orchestrates `npm run <script> --workspace=<path>` for every workspace that
-declares the target script, and it parses node test's own reporter output to build
-the summary. 
+declares the target script, and it parses node test's own output to build
+the global and per workspace summary. 
 
 It does not support pnpm/yarn workspaces or other test runners
 (Jest, Vitest, Mocha etc.). (for the moment)
+
+sumlyzer forces its own `node:test` reporter onto every workspace via
+`NODE_OPTIONS`, so a workspace's `test` script should just run `node --test`
+without configuring its own `--test-reporter`.
+sumlyzer detects this ahead of time and skips that workspace instead of running into it.
 
 ## Install
 
