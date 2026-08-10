@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 
-import { envWithTestReporter } from "../src/run.mjs";
+import { envWithTestReporter, hasOwnTestReporter } from "../src/run.mjs";
 
 const REPORTER_PATH = fileURLToPath(new URL("../src/testEventReporter.mjs", import.meta.url));
 const TEST_REPORTER_FLAGS = `--test-reporter=${REPORTER_PATH} --test-reporter-destination=stdout`;
@@ -35,5 +35,20 @@ describe("envWithTestReporter", () => {
 
     assert.equal(env.NODE_TEST_CONTEXT, undefined);
     assert.equal(env.PATH, "/usr/bin");
+  });
+});
+
+describe("hasOwnTestReporter", () => {
+  it("flags a workspace script that configures its own --test-reporter", () => {
+    assert.equal(hasOwnTestReporter('node --test --test-reporter=spec --test-reporter-destination=stdout "./test/*.spec.mjs"'), true);
+    assert.equal(hasOwnTestReporter("node --test --test-reporter tap"), true);
+  });
+
+  it("does not flag --test-reporter-destination on its own (no --test-reporter alongside it)", () => {
+    assert.equal(hasOwnTestReporter("node --test --test-reporter-destination=stdout"), false);
+  });
+
+  it("does not flag a plain node --test invocation", () => {
+    assert.equal(hasOwnTestReporter('node --test "./test/*.spec.mjs"'), false);
   });
 });

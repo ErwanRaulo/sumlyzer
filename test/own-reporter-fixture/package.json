@@ -1,0 +1,8 @@
+{
+  "name": "own-reporter-fixture",
+  "private": true,
+  "workspaces": [
+    "workspaces/normal-ws",
+    "workspaces/own-reporter-ws"
+  ]
+}

@@ -22,6 +22,7 @@ const RUN_FIXTURE = path.join(TEST_PATH, "run-fixture");
 const NO_ELIGIBLE_FIXTURE = path.join(TEST_PATH, "no-eligible-fixture");
 const EMPTY_WORKSPACES_FIXTURE = path.join(TEST_PATH, "empty-workspaces-fixture");
 const JUNIT_FIXTURE = path.join(TEST_PATH, "junit-fixture");
+const OWN_REPORTER_FIXTURE = path.join(TEST_PATH, "own-reporter-fixture");
 
 async function runCli(args, cwd, env) {
   // Avoid suite's own CI run setting GITHUB_ACTIONS=true, which would trigger the fold markers.
@@ -304,6 +305,15 @@ describe("sumlyzer run behavior", () => {
     assert.equal(code, 0);
     assert.match(stdout, /0\/0 workspaces passed\./);
     assert.doesNotMatch(stdout, /Your project does not have any workspaces\./);
+  });
+
+  it("skips a workspace whose own script sets --test-reporter, instead of colliding with sumlyzer's", async () => {
+    const { stdout, code } = await runCli([], OWN_REPORTER_FIXTURE);
+
+    assert.equal(code, 0);
+    assert.match(stdout, /⊘ own-reporter-ws: skipped, own --test-reporter detected in its "test" script/);
+    assert.doesNotMatch(stdout, /running own-reporter-ws/);
+    assert.match(stdout, /1\/1 workspaces passed\./);
   });
 
   it("--junit writes an aggregated JUnit report merging every workspace's testsuites", async () => {
