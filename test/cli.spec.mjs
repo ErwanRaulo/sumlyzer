@@ -23,6 +23,7 @@ const NO_ELIGIBLE_FIXTURE = path.join(TEST_PATH, "no-eligible-fixture");
 const EMPTY_WORKSPACES_FIXTURE = path.join(TEST_PATH, "empty-workspaces-fixture");
 const JUNIT_FIXTURE = path.join(TEST_PATH, "junit-fixture");
 const OWN_REPORTER_FIXTURE = path.join(TEST_PATH, "own-reporter-fixture");
+const INVALID_JSON_FIXTURE = path.join(TEST_PATH, "invalid-json-fixture");
 
 async function runCli(args, cwd, env) {
   // Avoid suite's own CI run setting GITHUB_ACTIONS=true, which would trigger the fold markers.
@@ -305,6 +306,17 @@ describe("sumlyzer run behavior", () => {
     assert.equal(code, 0);
     assert.match(stdout, /0\/0 workspaces passed\./);
     assert.doesNotMatch(stdout, /Your project does not have any workspaces\./);
+  });
+
+  it("reports every workspace with invalid JSON in its package.json and exits before running anything", async () => {
+    const { stdout, stderr, code } = await runCli([], INVALID_JSON_FIXTURE);
+
+    assert.equal(code, 1);
+    assert.match(stderr, /✗ broken-ws: could not read its package\.json/);
+    assert.match(stderr, /✗ broken-ws-2: could not read its package\.json/);
+    // npm resolves every workspace up front, so nothing can run until the JSON is fixed.
+    assert.doesNotMatch(stdout, /running pass-ws/);
+    assert.doesNotMatch(stdout, /workspaces passed/);
   });
 
   it("skips a workspace whose own script sets --test-reporter, instead of colliding with sumlyzer's", async () => {
