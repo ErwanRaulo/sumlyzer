@@ -1,0 +1,7 @@
+{
+  "name": "slow-ws",
+  "private": true,
+  "scripts": {
+    "test": "node -e \"/*sumlyzer-interrupt-fixture-marker*/ setInterval(() => {}, 1000)\""
+  }
+}

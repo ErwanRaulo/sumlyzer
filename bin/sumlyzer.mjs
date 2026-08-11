@@ -4,6 +4,7 @@ import path from "node:path";
 import { availableParallelism } from "node:os";
 
 import { main } from "../src/run.mjs";
+import { NoWorkspacesError, InvalidPackageJsonError, WorkspaceLaunchError } from "../src/errors.mjs";
 
 let args;
 try {
@@ -53,10 +54,24 @@ Options:
   process.exit(0);
 }
 
-await main({
-  root: path.resolve(process.cwd()),
-  scriptName: args.script,
-  ff: args.ff,
-  junitPath: args.junit,
-  concurrency
-});
+try {
+  await main({
+    root: path.resolve(process.cwd()),
+    scriptName: args.script,
+    ff: args.ff,
+    junitPath: args.junit,
+    concurrency
+  });
+}
+catch (error) {
+  if (error instanceof NoWorkspacesError) {
+    console.info(error.message);
+  }
+  else if (error instanceof InvalidPackageJsonError || error instanceof WorkspaceLaunchError) {
+    console.error(error.message);
+  }
+  else {
+    throw error;
+  }
+  process.exitCode = 1;
+}

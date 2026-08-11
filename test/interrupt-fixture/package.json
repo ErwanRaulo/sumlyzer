@@ -1,0 +1,5 @@
+{
+  "name": "interrupt-fixture",
+  "private": true,
+  "workspaces": ["workspaces/slow-ws"]
+}

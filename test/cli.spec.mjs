@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { execFile, spawn } from "node:child_process";
+import { mkdtemp, readFile, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
@@ -24,6 +24,38 @@ const EMPTY_WORKSPACES_FIXTURE = path.join(TEST_PATH, "empty-workspaces-fixture"
 const JUNIT_FIXTURE = path.join(TEST_PATH, "junit-fixture");
 const OWN_REPORTER_FIXTURE = path.join(TEST_PATH, "own-reporter-fixture");
 const INVALID_JSON_FIXTURE = path.join(TEST_PATH, "invalid-json-fixture");
+const INTERRUPT_FIXTURE = path.join(TEST_PATH, "interrupt-fixture");
+const INTERRUPT_MARKER = "sumlyzer-interrupt-fixture-marker";
+
+async function pgrepMatches(pattern) {
+  try {
+    const { stdout } = await execFileAsync("pgrep", ["-f", pattern]);
+    return stdout.trim().length > 0;
+  }
+  catch {
+    // pgrep exits 1 (no stdout) when nothing matches.
+    return false;
+  }
+}
+
+// A PATH containing only a "node" symlink: enough to launch the CLI itself,
+// but any spawn("npm", ...) it does will fail to resolve and error out.
+async function pathWithoutNpm() {
+  const dir = await mkdtemp(path.join(tmpdir(), "sumlyzer-no-npm-"));
+  await symlink(process.execPath, path.join(dir, "node"));
+  return dir;
+}
+
+async function waitUntil(predicate, { timeoutMs = 5000, intervalMs = 100 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await predicate()) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  throw new Error("waitUntil: condition was never met within the timeout");
+}
 
 async function runCli(args, cwd, env) {
   // Avoid suite's own CI run setting GITHUB_ACTIONS=true, which would trigger the fold markers.
@@ -317,6 +349,54 @@ describe("sumlyzer run behavior", () => {
     // npm resolves every workspace up front, so nothing can run until the JSON is fixed.
     assert.doesNotMatch(stdout, /running pass-ws/);
     assert.doesNotMatch(stdout, /workspaces passed/);
+  });
+
+  it("stops scheduling and reports the workspace when npm itself can't be launched", async () => {
+    const noNpmPath = await pathWithoutNpm();
+
+    try {
+      const { stdout, stderr, code } = await runCli(["--concurrency", "1"], RUN_FIXTURE, { PATH: noNpmPath });
+
+      assert.equal(code, 1);
+      assert.match(stderr, /✗ fail-ws: could not launch "test" \(spawn npm ENOENT\)/);
+
+      // the launch error aborts the whole run: only the first eligible workspace
+      // is even attempted, nothing after it gets scheduled.
+      assert.match(stdout, /running fail-ws/);
+      assert.doesNotMatch(stdout, /running pass-ws/);
+      assert.doesNotMatch(stdout, /running custom-runner-ws/);
+      assert.doesNotMatch(stdout, /workspace\(s\) failed/);
+    }
+    finally {
+      await rm(noNpmPath, { recursive: true, force: true });
+    }
+  });
+
+  it("kills the underlying test process on SIGINT instead of leaving it orphaned", async () => {
+    const child = spawn("node", [BIN], { cwd: INTERRUPT_FIXTURE });
+    let stdout = "";
+
+    await new Promise((resolve, reject) => {
+      child.stdout.on("data", (chunk) => {
+        stdout += chunk;
+        if (stdout.includes("running slow-ws")) {
+          resolve();
+        }
+      });
+      child.on("error", reject);
+    });
+
+    // "running slow-ws" is printed before the actual npm/node process chain is spawned,
+    // so poll until the grandchild is genuinely alive instead of racing it.
+    await waitUntil(() => pgrepMatches(INTERRUPT_MARKER));
+
+    const exitPromise = new Promise((resolve) => child.on("exit", (code) => resolve(code)));
+    child.kill("SIGINT");
+    const code = await exitPromise;
+
+    assert.equal(code, 130);
+
+    await waitUntil(async () => !(await pgrepMatches(INTERRUPT_MARKER)));
   });
 
   it("skips a workspace whose own script sets --test-reporter, instead of colliding with sumlyzer's", async () => {
