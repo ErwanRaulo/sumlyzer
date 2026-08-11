@@ -1,4 +1,4 @@
-import { red, workspaceName } from "./reporter.mjs";
+import { workspaceName } from "./reporter.mjs";
 
 export class NoWorkspacesError extends Error {
   constructor() {
@@ -9,7 +9,7 @@ export class NoWorkspacesError extends Error {
 
 export class InvalidPackageJsonError extends Error {
   constructor(entries) {
-    super(entries.map(({ wsPath, message }) => red(`✗ ${workspaceName(wsPath)}: could not read its package.json (${message})`)).join("\n"));
+    super(entries.map(({ wsPath, message }) => `${workspaceName(wsPath)}: could not read its package.json (${message})`).join("\n"));
     this.name = "InvalidPackageJsonError";
     this.entries = entries;
   }
@@ -17,7 +17,7 @@ export class InvalidPackageJsonError extends Error {
 
 export class WorkspaceLaunchError extends Error {
   constructor(wsPath, scriptName, cause) {
-    super(red(`✗ ${workspaceName(wsPath)}: could not launch "${scriptName}" (${cause.message})`), { cause });
+    super(`${workspaceName(wsPath)}: could not launch "${scriptName}" (${cause.message})`, { cause });
     this.name = "WorkspaceLaunchError";
     this.wsPath = wsPath;
     this.scriptName = scriptName;

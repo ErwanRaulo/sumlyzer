@@ -86,7 +86,7 @@ function killWorkspaceChild(child) {
   }
 }
 
-async function captureWorkspaceOutput(root, wsPath, scriptName, junitDestPath, activeChildren) {
+async function captureWorkspaceOutput({ root, wsPath, scriptName, junitDestPath, activeChildren }) {
   const options = {
     cwd: root,
     shell: process.platform === "win32",
@@ -119,6 +119,30 @@ async function captureWorkspaceOutput(root, wsPath, scriptName, junitDestPath, a
   }
 }
 
+function killActiveChildren(activeChildren) {
+  for (const child of activeChildren) {
+    killWorkspaceChild(child);
+  }
+}
+
+async function withInterruptHandling(activeChildren, run) {
+  function onInterrupt(signal) {
+    killActiveChildren(activeChildren);
+    process.exit(signal === "SIGINT" ? 130 : 143);
+  }
+
+  process.once("SIGINT", onInterrupt);
+  process.once("SIGTERM", onInterrupt);
+
+  try {
+    return await run();
+  }
+  finally {
+    process.off("SIGINT", onInterrupt);
+    process.off("SIGTERM", onInterrupt);
+  }
+}
+
 function buildWorkspaceResult(wsPath, junitDestPath, durationMs, { exitCode, stdout, stderr }) {
   const { counts, failingTests, failures } = parseReporterEvents(stdout);
 
@@ -139,9 +163,9 @@ function buildWorkspaceResult(wsPath, junitDestPath, durationMs, { exitCode, std
   };
 }
 
-async function runWorkspaceScript(root, wsPath, scriptName, junitDestPath, activeChildren) {
+async function runWorkspaceScript({ root, wsPath, scriptName, junitDestPath, activeChildren }) {
   const start = Date.now();
-  const captured = await captureWorkspaceOutput(root, wsPath, scriptName, junitDestPath, activeChildren);
+  const captured = await captureWorkspaceOutput({ root, wsPath, scriptName, junitDestPath, activeChildren });
   return buildWorkspaceResult(wsPath, junitDestPath, Date.now() - start, captured);
 }
 
@@ -171,14 +195,6 @@ async function runWorkspaces({ root, workspacesToRun, scriptName, ff, junitDir, 
   let stopScheduling = false;
   let nextIndex = 0;
 
-  // --ff only stops scheduling new workspaces; ones already running are left to
-  // finish and report their real result. A launch error is different: it means
-  // sumlyzer itself can't go on, so nothing still running should keep spawning.
-  function killActiveChildren() {
-    for (const child of activeChildren) {
-      killWorkspaceChild(child);
-    }
-  }
 
   async function worker() {
     while (!stopScheduling && nextIndex < workspacesToRun.length) {
@@ -191,11 +207,11 @@ async function runWorkspaces({ root, workspacesToRun, scriptName, ff, junitDir, 
 
       let result;
       try {
-        result = await runWorkspaceScript(root, wsPath, scriptName, junitDestPath, activeChildren);
+        result = await runWorkspaceScript({ root, wsPath, scriptName, junitDestPath, activeChildren });
       }
       catch (error) {
         stopScheduling = true;
-        killActiveChildren();
+        killActiveChildren(activeChildren);
         throw new WorkspaceLaunchError(wsPath, scriptName, error);
       }
       results[index] = result;
@@ -207,25 +223,8 @@ async function runWorkspaces({ root, workspacesToRun, scriptName, ff, junitDir, 
     }
   }
 
-  // Spawned children run detached (their own process group) so a launch error can kill
-  // a whole npm subtree via killWorkspaceChild. That isolation means Ctrl-C no longer
-  // reaches them for free the way it would in the same group, so handle it explicitly:
-  // kill whatever's still running, then exit with the conventional 128+signal code.
-  function onInterrupt(signal) {
-    killActiveChildren();
-    process.exit(signal === "SIGINT" ? 130 : 143);
-  }
-  process.once("SIGINT", onInterrupt);
-  process.once("SIGTERM", onInterrupt);
-
   const workerCount = Math.max(1, Math.min(concurrency, workspacesToRun.length));
-  try {
-    await Promise.all(Array.from({ length: workerCount }, worker));
-  }
-  finally {
-    process.off("SIGINT", onInterrupt);
-    process.off("SIGTERM", onInterrupt);
-  }
+  await withInterruptHandling(activeChildren, () => Promise.all(Array.from({ length: workerCount }, worker)));
 
   return results.filter((result) => result !== undefined);
 }

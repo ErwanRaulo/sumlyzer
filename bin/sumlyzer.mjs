@@ -5,6 +5,11 @@ import { availableParallelism } from "node:os";
 
 import { main } from "../src/run.mjs";
 import { NoWorkspacesError, InvalidPackageJsonError, WorkspaceLaunchError } from "../src/errors.mjs";
+import { red } from "../src/reporter.mjs";
+
+function printWorkspaceError(message) {
+  console.error(red(message.split("\n").map((line) => `✗ ${line}`).join("\n")));
+}
 
 let args;
 try {
@@ -68,7 +73,7 @@ catch (error) {
     console.info(error.message);
   }
   else if (error instanceof InvalidPackageJsonError || error instanceof WorkspaceLaunchError) {
-    console.error(error.message);
+    printWorkspaceError(error.message);
   }
   else {
     throw error;
