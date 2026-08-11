@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -9,6 +9,7 @@ import { buildJunitReport } from "./junit.mjs";
 import { stripNpmNoise } from "./parseOutput.mjs";
 import { parseReporterEvents, renderFailureRecap, renderSummaryText } from "./testEventReporter.mjs";
 import { red, dim, workspaceName, githubGroupSyntax, printWorkspaceResult, printSummary, reportOutcome } from "./reporter.mjs";
+import { NoWorkspacesError, InvalidPackageJsonError, WorkspaceLaunchError } from "./errors.mjs";
 
 const TEST_EVENT_REPORTER_PATH = fileURLToPath(new URL("./testEventReporter.mjs", import.meta.url));
 
@@ -68,30 +69,54 @@ function listEligibleWorkspaces(root, workspaces, scriptName) {
   return { eligible, ownReporterConflicts, invalidPackageJson };
 }
 
-async function captureWorkspaceOutput(root, wsPath, scriptName, junitDestPath) {
+// npm spawns the actual test runner as its own child, so killing just the "npm"
+// process leaves that grandchild running. Giving it its own process group (POSIX)
+// or asking Windows to kill the whole tree ensures nothing is left behind.
+function killWorkspaceChild(child) {
+  if (process.platform === "win32") {
+    spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"]);
+    return;
+  }
+
+  try {
+    process.kill(-child.pid, "SIGTERM");
+  }
+  catch {
+    child.kill("SIGTERM");
+  }
+}
+
+async function captureWorkspaceOutput(root, wsPath, scriptName, junitDestPath, activeChildren) {
   const options = {
     cwd: root,
     shell: process.platform === "win32",
+    detached: process.platform !== "win32",
     env: envWithTestReporter(process.env, junitDestPath)
   };
 
   const child = spawn("npm", ["run", scriptName, "--workspace=" + wsPath], options);
+  activeChildren.add(child);
   const stdoutChunks = [];
   const stderrChunks = [];
 
   child.stdout.on("data", (chunk) => stdoutChunks.push(chunk));
   child.stderr.on("data", (chunk) => stderrChunks.push(chunk));
 
-  const exitCode = await new Promise((resolve, reject) => {
-    child.on("error", reject);
-    child.on("close", (code, signal) => resolve(code ?? (signal ? 1 : 0)));
-  });
+  try {
+    const exitCode = await new Promise((resolve, reject) => {
+      child.on("error", reject);
+      child.on("close", (code, signal) => resolve(code ?? (signal ? 1 : 0)));
+    });
 
-  return {
-    exitCode,
-    stdout: Buffer.concat(stdoutChunks).toString("utf8"),
-    stderr: Buffer.concat(stderrChunks).toString("utf8")
-  };
+    return {
+      exitCode,
+      stdout: Buffer.concat(stdoutChunks).toString("utf8"),
+      stderr: Buffer.concat(stderrChunks).toString("utf8")
+    };
+  }
+  finally {
+    activeChildren.delete(child);
+  }
 }
 
 function buildWorkspaceResult(wsPath, junitDestPath, durationMs, { exitCode, stdout, stderr }) {
@@ -114,9 +139,9 @@ function buildWorkspaceResult(wsPath, junitDestPath, durationMs, { exitCode, std
   };
 }
 
-async function runWorkspaceScript(root, wsPath, scriptName, junitDestPath) {
+async function runWorkspaceScript(root, wsPath, scriptName, junitDestPath, activeChildren) {
   const start = Date.now();
-  const captured = await captureWorkspaceOutput(root, wsPath, scriptName, junitDestPath);
+  const captured = await captureWorkspaceOutput(root, wsPath, scriptName, junitDestPath, activeChildren);
   return buildWorkspaceResult(wsPath, junitDestPath, Date.now() - start, captured);
 }
 
@@ -142,8 +167,18 @@ async function collectJunitEntries(results) {
 async function runWorkspaces({ root, workspacesToRun, scriptName, ff, junitDir, concurrency }) {
   const results = new Array(workspacesToRun.length);
   const ciGroup = githubGroupSyntax(process.env);
+  const activeChildren = new Set();
   let stopScheduling = false;
   let nextIndex = 0;
+
+  // --ff only stops scheduling new workspaces; ones already running are left to
+  // finish and report their real result. A launch error is different: it means
+  // sumlyzer itself can't go on, so nothing still running should keep spawning.
+  function killActiveChildren() {
+    for (const child of activeChildren) {
+      killWorkspaceChild(child);
+    }
+  }
 
   async function worker() {
     while (!stopScheduling && nextIndex < workspacesToRun.length) {
@@ -156,11 +191,12 @@ async function runWorkspaces({ root, workspacesToRun, scriptName, ff, junitDir, 
 
       let result;
       try {
-        result = await runWorkspaceScript(root, wsPath, scriptName, junitDestPath);
+        result = await runWorkspaceScript(root, wsPath, scriptName, junitDestPath, activeChildren);
       }
       catch (error) {
-        console.error(red(`✗ ${name}: could not launch "${scriptName}" (${error.message})`));
-        process.exit(1);
+        stopScheduling = true;
+        killActiveChildren();
+        throw new WorkspaceLaunchError(wsPath, scriptName, error);
       }
       results[index] = result;
       printWorkspaceResult(name, result, ciGroup);
@@ -171,8 +207,25 @@ async function runWorkspaces({ root, workspacesToRun, scriptName, ff, junitDir, 
     }
   }
 
+  // Spawned children run detached (their own process group) so a launch error can kill
+  // a whole npm subtree via killWorkspaceChild. That isolation means Ctrl-C no longer
+  // reaches them for free the way it would in the same group, so handle it explicitly:
+  // kill whatever's still running, then exit with the conventional 128+signal code.
+  function onInterrupt(signal) {
+    killActiveChildren();
+    process.exit(signal === "SIGINT" ? 130 : 143);
+  }
+  process.once("SIGINT", onInterrupt);
+  process.once("SIGTERM", onInterrupt);
+
   const workerCount = Math.max(1, Math.min(concurrency, workspacesToRun.length));
-  await Promise.all(Array.from({ length: workerCount }, worker));
+  try {
+    await Promise.all(Array.from({ length: workerCount }, worker));
+  }
+  finally {
+    process.off("SIGINT", onInterrupt);
+    process.off("SIGTERM", onInterrupt);
+  }
 
   return results.filter((result) => result !== undefined);
 }
@@ -208,18 +261,13 @@ export async function main({ root, scriptName, ff, junitPath, concurrency = 1 })
   const { workspaces } = readJson(path.join(root, "package.json"));
 
   if (!workspaces || workspaces.length === 0) {
-    console.info("Your project does not have any workspaces.");
-    process.exit(1);
+    throw new NoWorkspacesError();
   }
 
   const { eligible: workspacesToRun, ownReporterConflicts, invalidPackageJson } = listEligibleWorkspaces(root, workspaces, scriptName);
 
   if (invalidPackageJson.length > 0) {
-    for (const { wsPath, message } of invalidPackageJson) {
-      console.error(red(`✗ ${workspaceName(wsPath)}: could not read its package.json (${message})`));
-    }
-
-    process.exit(1);
+    throw new InvalidPackageJsonError(invalidPackageJson);
   }
 
   for (const wsPath of ownReporterConflicts) {
