@@ -226,7 +226,18 @@ async function runWorkspaces({ root, workspacesToRun, scriptName, ff, junitDir, 
   const workerCount = Math.max(1, Math.min(concurrency, workspacesToRun.length));
   await withInterruptHandling(activeChildren, () => Promise.all(Array.from({ length: workerCount }, worker)));
 
-  return results.filter((result) => result !== undefined);
+  const completed = [];
+  const skipped = [];
+  for (const [index, result] of results.entries()) {
+    if (result === undefined) {
+      skipped.push(workspacesToRun[index]);
+    }
+    else {
+      completed.push(result);
+    }
+  }
+
+  return { completed, skipped };
 }
 
 const DEFAULT_JUNIT_FILENAME = "junit.xml";
@@ -275,12 +286,12 @@ export async function main({ root, scriptName, ff, junitPath, concurrency = 1 })
 
   const junitDir = junitPath ? await mkdtemp(path.join(tmpdir(), "sumlyzer-junit-")) : null;
 
-  let results;
+  let completed, skipped;
   try {
-    results = await runWorkspaces({ root, workspacesToRun, scriptName, ff, junitDir, concurrency });
+    ({ completed, skipped } = await runWorkspaces({ root, workspacesToRun, scriptName, ff, junitDir, concurrency }));
 
     if (junitDir) {
-      await writeJunitReport(root, junitPath, results);
+      await writeJunitReport(root, junitPath, completed);
     }
   }
   finally {
@@ -289,6 +300,6 @@ export async function main({ root, scriptName, ff, junitPath, concurrency = 1 })
     }
   }
 
-  printSummary(results, workspacesToRun.slice(results.length));
-  reportOutcome(results);
+  printSummary(completed, skipped);
+  reportOutcome(completed);
 }
