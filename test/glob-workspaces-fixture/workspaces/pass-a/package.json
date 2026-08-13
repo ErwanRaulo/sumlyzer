@@ -1,0 +1,7 @@
+{
+  "name": "pass-a",
+  "private": true,
+  "scripts": {
+    "test": "node --test \"./test/*.spec.mjs\""
+  }
+}

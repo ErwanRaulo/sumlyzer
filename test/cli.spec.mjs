@@ -25,6 +25,7 @@ const JUNIT_FIXTURE = path.join(TEST_PATH, "junit-fixture");
 const OWN_REPORTER_FIXTURE = path.join(TEST_PATH, "own-reporter-fixture");
 const ALL_OWN_REPORTER_FIXTURE = path.join(TEST_PATH, "all-own-reporter-fixture");
 const INVALID_JSON_FIXTURE = path.join(TEST_PATH, "invalid-json-fixture");
+const GLOB_WORKSPACES_FIXTURE = path.join(TEST_PATH, "glob-workspaces-fixture");
 const INTERRUPT_FIXTURE = path.join(TEST_PATH, "interrupt-fixture");
 const INTERRUPT_MARKER = "sumlyzer-interrupt-fixture-marker";
 
@@ -234,6 +235,20 @@ describe("sumlyzer run behavior", () => {
     // no --ff: all three eligible workspaces ran, none skipped.
     assert.doesNotMatch(stdout, /SKIPPED/);
     assert.match(stdout, /1\/3 workspace\(s\) failed:/);
+  });
+
+  it("resolves \"workspaces\" glob patterns to their actual matching directories, honoring \"!\" exclusions", async () => {
+    const { stdout, code } = await runCli([], GLOB_WORKSPACES_FIXTURE);
+
+    assert.equal(code, 0);
+    assert.match(stdout, /running pass-a/);
+    assert.match(stdout, /running pass-b/);
+    assert.match(stdout, /✓ pass-a/);
+    assert.match(stdout, /✓ pass-b/);
+
+    // "!workspaces/excluded-ws" must exclude it from the "workspaces/*" match entirely.
+    assert.doesNotMatch(stdout, /excluded-ws/);
+    assert.match(stdout, /2\/2 workspaces passed/);
   });
 
   it("--ff stops at the first failing workspace and marks the rest as skipped", async () => {

@@ -1,0 +1,8 @@
+{
+  "name": "glob-workspaces-fixture",
+  "private": true,
+  "workspaces": [
+    "workspaces/*",
+    "!workspaces/excluded-ws"
+  ]
+}
