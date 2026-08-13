@@ -4,6 +4,8 @@ import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { glob } from "glob";
+
 import { buildJunitReport } from "./junit.mjs";
 import { red, dim, workspaceName, githubGroupSyntax, printWorkspaceResult, printSummary, reportOutcome } from "./reporter.mjs";
 import { NoWorkspacesError, InvalidPackageJsonError, WorkspaceLaunchError } from "./errors.mjs";
@@ -15,6 +17,43 @@ const runner = { hasOwnReporter, prepareEnv, parseResult };
 // but for now it's simpler than async and should be fine in practice.
 function readJson(file) {
   return JSON.parse(readFileSync(file, "utf8"));
+}
+
+// Splits "workspaces" entries into directory-only glob patterns to include and
+// (from any leading "!") patterns to exclude, matching npm's own interpretation
+// of the field.
+function splitWorkspacePatterns(workspaces) {
+  const patterns = [];
+  const ignore = ["**/node_modules/**"];
+
+  for (const entry of workspaces) {
+    if (entry.startsWith("!")) {
+      ignore.push(entry.slice(1));
+    }
+    else {
+      patterns.push(entry.endsWith("/") ? entry : `${entry}/`);
+    }
+  }
+
+  return { patterns, ignore };
+}
+
+// The "workspaces" field holds glob patterns (e.g. "packages/*"), not necessarily
+// concrete paths. Resolve it the same way npm itself does: glob each pattern
+// against directories only, in declaration order.
+async function resolveWorkspacePaths(root, workspaces) {
+  const { patterns, ignore } = splitWorkspacePatterns(workspaces);
+  const resolved = new Set();
+
+  for (const pattern of patterns) {
+    const matches = await glob(pattern, { cwd: root, ignore });
+
+    for (const match of matches.sort((a, b) => a.localeCompare(b, "en"))) {
+      resolved.add(match);
+    }
+  }
+
+  return [...resolved];
 }
 
 function listEligibleWorkspaces(root, workspaces, scriptName) {
@@ -243,7 +282,9 @@ export async function main({ root, scriptName, ff, junitPath, concurrency = 1 })
     throw new NoWorkspacesError();
   }
 
-  const { eligible: workspacesToRun, ownReporterConflicts, invalidPackageJson } = listEligibleWorkspaces(root, workspaces, scriptName);
+  const resolvedWorkspaces = await resolveWorkspacePaths(root, workspaces);
+
+  const { eligible: workspacesToRun, ownReporterConflicts, invalidPackageJson } = listEligibleWorkspaces(root, resolvedWorkspaces, scriptName);
 
   if (invalidPackageJson.length > 0) {
     throw new InvalidPackageJsonError(invalidPackageJson);
