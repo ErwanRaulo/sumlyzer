@@ -23,6 +23,7 @@ const NO_ELIGIBLE_FIXTURE = path.join(TEST_PATH, "no-eligible-fixture");
 const EMPTY_WORKSPACES_FIXTURE = path.join(TEST_PATH, "empty-workspaces-fixture");
 const JUNIT_FIXTURE = path.join(TEST_PATH, "junit-fixture");
 const OWN_REPORTER_FIXTURE = path.join(TEST_PATH, "own-reporter-fixture");
+const ALL_OWN_REPORTER_FIXTURE = path.join(TEST_PATH, "all-own-reporter-fixture");
 const INVALID_JSON_FIXTURE = path.join(TEST_PATH, "invalid-json-fixture");
 const INTERRUPT_FIXTURE = path.join(TEST_PATH, "interrupt-fixture");
 const INTERRUPT_MARKER = "sumlyzer-interrupt-fixture-marker";
@@ -332,12 +333,13 @@ describe("sumlyzer run behavior", () => {
     }
   });
 
-  it("prints an empty 0/0 summary when no workspace has the target script, instead of crashing", async () => {
+  it("prints a clear message and exits 0 when no workspace has the target script, instead of crashing", async () => {
     const { stdout, code } = await runCli([], NO_ELIGIBLE_FIXTURE);
 
     assert.equal(code, 0);
-    assert.match(stdout, /0\/0 workspaces passed\./);
+    assert.match(stdout, /No workspace has a "test" script\./);
     assert.doesNotMatch(stdout, /Your project does not have any workspaces\./);
+    assert.doesNotMatch(stdout, /workspaces passed/);
   });
 
   it("reports every workspace with invalid JSON in its package.json and exits before running anything", async () => {
@@ -406,6 +408,16 @@ describe("sumlyzer run behavior", () => {
     assert.match(stdout, /⊘ own-reporter-ws: skipped, own --test-reporter detected in its "test" script/);
     assert.doesNotMatch(stdout, /running own-reporter-ws/);
     assert.match(stdout, /1\/1 workspaces passed\./);
+  });
+
+  it("prints a dedicated message when every workspace with the target script was skipped for its own reporter", async () => {
+    const { stdout, code } = await runCli([], ALL_OWN_REPORTER_FIXTURE);
+
+    assert.equal(code, 0);
+    assert.match(stdout, /⊘ own-reporter-ws: skipped, own --test-reporter detected in its "test" script/);
+    assert.match(stdout, /All workspaces with a "test" script were skipped \(own --test-reporter detected\)\./);
+    assert.doesNotMatch(stdout, /No workspace has a "test" script\./);
+    assert.doesNotMatch(stdout, /workspaces passed/);
   });
 
   it("--junit writes an aggregated JUnit report merging every workspace's testsuites", async () => {
