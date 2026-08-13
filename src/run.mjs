@@ -253,6 +253,13 @@ export async function main({ root, scriptName, ff, junitPath, concurrency = 1 })
     console.log(dim(`⊘ ${workspaceName(wsPath)}: skipped, own --test-reporter detected in its "${scriptName}" script`));
   }
 
+  if (workspacesToRun.length === 0) {
+    console.log(dim(ownReporterConflicts.length > 0
+      ? `All workspaces with a "${scriptName}" script were skipped (own --test-reporter detected).`
+      : `No workspace has a "${scriptName}" script.`));
+    return;
+  }
+
   const junitDir = junitPath ? await mkdtemp(path.join(tmpdir(), "sumlyzer-junit-")) : null;
 
   let completed, skipped;
