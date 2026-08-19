@@ -85,31 +85,7 @@ This also applies when `--junit` can't write its report.
 
 ## Example
 
-```
-running contact
-✓ contact 2.6s (35/35 tests)
-running scanner
-✓ scanner 10.1s (161/162 tests)
-running tarball
-✓ tarball 1.8s (77/77 tests)
-running tree-walker
-✓ tree-walker 3.0s (26/26 tests)
-running flags
-✓ flags 1.1s (9/9 tests)
-
-Summary
-┌─────────────┬────────┬──────────┬───────────────┬───────┬───────┬──────┬──────┬──────┬───────────┐
-│ (index)     │ status │ duration │ testsDuration │ tests │ pass  │ fail │ skip │ todo │ cancelled │
-├─────────────┼────────┼──────────┼───────────────┼───────┼───────┼──────┼──────┼──────┼───────────┤
-│ contact     │ 'PASS' │ '2.6s'   │ '0.9s'        │ '35'  │ '35'  │ '0'  │ '0'  │ '0'  │ '0'       │
-│ scanner     │ 'PASS' │ '10.1s'  │ '8.7s'        │ '162' │ '161' │ '0'  │ '1'  │ '0'  │ '0'       │
-│ tarball     │ 'PASS' │ '1.8s'   │ '0.7s'        │ '77'  │ '77'  │ '0'  │ '0'  │ '0'  │ '0'       │
-│ tree-walker │ 'PASS' │ '3.0s'   │ '2.0s'        │ '26'  │ '26'  │ '0'  │ '0'  │ '0'  │ '0'       │
-│ flags       │ 'PASS' │ '1.1s'   │ '0.1s'        │ '9'   │ '9'   │ '0'  │ '0'  │ '0'  │ '0'       │
-└─────────────┴────────┴──────────┴───────────────┴───────┴───────┴──────┴──────┴──────┴───────────┘
-
-5/5 workspaces passed.
-```
+![fail fast example](https://github.com/ErwanRaulo/sumlyzer/blob/main/example.png?raw=true)
 
 ### Summary columns
 
@@ -126,46 +102,6 @@ Summary
 | `todo`          | Tests reported as todo (`ℹ todo`), e.g. `t.todo()` |
 | `cancelled`     | Tests reported as cancelled (`ℹ cancelled`), unlike `skip`/`todo` this usually signals a real problem |
 
-
-### On failure
-
-Only the failing workspace prints its detail and passing ones stay collapsed to a single line.
-
-```
-running contact
-✓ contact 2.6s (35/35 tests)
-running scanner
-✓ scanner 10.1s (161/162 tests)
-running utils
-
-✗ utils failed
-test at test/format.spec.mjs:12:3
-✖ formats negative numbers (3ms)
-  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal
-  + actual - expected
-
-  + '-1'
-  - '(1)'
-
-✗ utils 1.3s, exit code 1
-
-running flags
-✓ flags 1.1s (9/9 tests)
-
-Summary
-┌─────────┬────────┬──────────┬───────────────┬───────┬───────┬──────┬──────┬──────┬───────────┐
-│ (index) │ status │ duration │ testsDuration │ tests │ pass  │ fail │ skip │ todo │ cancelled │
-├─────────┼────────┼──────────┼───────────────┼───────┼───────┼──────┼──────┼──────┼───────────┤
-│ contact │ 'PASS' │ '2.6s'   │ '0.9s'        │ '35'  │ '35'  │ '0'  │ '0'  │ '0'  │ '0'       │
-│ scanner │ 'PASS' │ '10.1s'  │ '8.7s'        │ '162' │ '161' │ '0'  │ '1'  │ '0'  │ '0'       │
-│ utils   │ 'FAIL' │ '1.3s'   │ '0.1s'        │ '30'  │ '29'  │ '1'  │ '0'  │ '0'  │ '0'       │
-│ flags   │ 'PASS' │ '1.1s'   │ '0.1s'        │ '9'   │ '9'   │ '0'  │ '0'  │ '0'  │ '0'       │
-└─────────┴────────┴──────────┴───────────────┴───────┴───────┴──────┴──────┴──────┴───────────┘
-
-1/4 workspace(s) failed:
-  utils
-    ✖ formats negative numbers
-```
 
 ### JUnit report
 
