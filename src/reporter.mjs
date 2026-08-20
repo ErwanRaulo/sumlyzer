@@ -44,24 +44,19 @@ export function printWorkspaceResult(name, result, ciGroup) {
     return;
   }
 
-  const seconds = formatSeconds(result.durationMs);
-  const countsLabel = result.counts ? ` (${result.counts.pass}/${result.counts.tests} tests)` : "";
-
   if (result.exitCode === 0) {
-    process.stdout.write(green(`✓ ${name}`) + dim(` ${seconds}${countsLabel}\n`));
+    process.stdout.write(green(`✓ ${name}\n`));
     return;
   }
 
-  process.stdout.write(`\n${bold(red(`✗ ${name} failed`))}\n`);
-  process.stdout.write(result.failureDetails + "\n");
-  process.stdout.write(red(`✗ ${name}`) + dim(` ${seconds}, exit code ${result.exitCode}\n\n`));
+  process.stdout.write(`\n${bold(red(`✗ ${name} failed`))} ${dim(`(exit code ${result.exitCode})`)}\n`);
+  process.stdout.write(result.failureDetails + "\n\n");
 }
 
 function summaryRow(status, duration, counts) {
   return {
     status,
     duration,
-    testsDuration: counts?.durationMs ? formatSeconds(Number(counts.durationMs)) : "-",
     tests: counts?.tests ?? "-",
     pass: counts?.pass ?? "-",
     fail: counts?.fail ?? "-",

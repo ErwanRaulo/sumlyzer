@@ -94,7 +94,6 @@ This also applies when `--junit` can't write its report.
 | `(index)`       | Workspace name |
 | `status`        | `PASS`, `FAIL`, or `SKIPPED` (reached when `--ff` stopped scheduling before this workspace ran) |
 | `duration`      | Wall-clock time for the whole `npm run <script> --workspace=<path>` process, including npm/spawn overhead |
-| `testsDuration` | `duration_ms` as reported by node's own test runner |
 | `tests`         | Total number of tests node:test ran in that workspace                                            |
 | `pass`          | Number of passing tests                                                                          |
 | `fail`          | Number of failing tests                                                                          |

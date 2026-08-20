@@ -229,7 +229,7 @@ describe("sumlyzer run behavior", () => {
     assert.match(stdout, /✖ some assertion/);
     assert.match(stdout, /✖ another assertion/);
 
-    assert.match(stdout, /✓ pass-ws.*\(3\/3 tests\)/);
+    assert.match(stdout, /✓ pass-ws/);
     assert.match(stdout, /✓ custom-runner-ws/);
 
     // no --ff: all three eligible workspaces ran, none skipped.
@@ -277,7 +277,7 @@ describe("sumlyzer run behavior", () => {
     assert.match(stdout, /✗ fail-ws failed/);
     assert.match(stdout, /✖ some assertion/);
     assert.match(stdout, /✖ another assertion/);
-    assert.match(stdout, /✓ pass-ws.*\(3\/3 tests\)/);
+    assert.match(stdout, /✓ pass-ws/);
     assert.match(stdout, /✓ custom-runner-ws/);
 
     assert.doesNotMatch(stdout, /SKIPPED/);
