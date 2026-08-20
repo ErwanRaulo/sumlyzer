@@ -1,6 +1,6 @@
 {
   "name": "sumlyzer",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Run every npm workspace's test script, only show output for the ones that fail, and finish with an aggregated pass/fail summary.",
   "type": "module",
   "bin": {
