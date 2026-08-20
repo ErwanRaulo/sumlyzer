@@ -97,9 +97,12 @@ This also applies when `--junit` can't write its report.
 | `tests`         | Total number of tests node:test ran in that workspace                                            |
 | `pass`          | Number of passing tests                                                                          |
 | `fail`          | Number of failing tests                                                                          |
-| `skip`          | Tests reported as skipped (`ℹ skipped`), e.g. `t.skip()` or `{ skip: true }`                      |
-| `todo`          | Tests reported as todo (`ℹ todo`), e.g. `t.todo()` |
-| `cancelled`     | Tests reported as cancelled (`ℹ cancelled`), unlike `skip`/`todo` this usually signals a real problem |
+
+Skipped (`t.skip()`), todo (`t.todo()`), and cancelled tests are rare enough
+that a column of zeros for every workspace would just bury the one row that
+has a nonzero count. Instead, sumlyzer prints a footnote below the table,
+naming only the workspaces that actually have some, e.g. `skipped tests:
+flags (2)`.
 
 
 ### JUnit report

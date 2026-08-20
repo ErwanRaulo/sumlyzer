@@ -2,6 +2,7 @@ import { styleText } from "node:util";
 
 export const green = (str) => styleText("green", str);
 export const red = (str) => styleText("red", str);
+export const blue = (str) => styleText("blue", str);
 export const dim = (str) => styleText("dim", str);
 export const bold = (str) => styleText("bold", str);
 
@@ -59,11 +60,19 @@ function summaryRow(status, duration, counts) {
     duration,
     tests: counts?.tests ?? "-",
     pass: counts?.pass ?? "-",
-    fail: counts?.fail ?? "-",
-    skip: counts?.skip ?? "-",
-    todo: counts?.todo ?? "-",
-    cancelled: counts?.cancelled ?? "-"
+    fail: counts?.fail ?? "-"
   };
+}
+
+// skip/todo/cancelled are rare in practice: a full column of zeros for every
+// workspace buries the one row that actually has a nonzero count, so they're
+// called out as a footnote instead of living in the table.
+function extraCountsFootnote(results, key, label) {
+  const entries = results
+    .filter(({ counts }) => Number(counts?.[key]) > 0)
+    .map(({ wsPath, counts }) => `${workspaceName(wsPath)} (${counts[key]})`);
+
+  return entries.length > 0 ? `${label}: ${entries.join(", ")}` : null;
 }
 
 export function printSummary(results, skipped) {
@@ -78,6 +87,13 @@ export function printSummary(results, skipped) {
   }
 
   console.table(rows);
+
+  for (const [key, label] of [["skip", "skipped tests"], ["todo", "todo tests"], ["cancelled", "cancelled tests"]]) {
+    const footnote = extraCountsFootnote(results, key, label);
+    if (footnote) {
+      console.log(blue(`ℹ ${footnote}`));
+    }
+  }
 
   if (skipped.length > 0) {
     console.log(dim(`${skipped.length} workspace(s) skipped (--ff): ${skipped.map(workspaceName).join(", ")}`));
