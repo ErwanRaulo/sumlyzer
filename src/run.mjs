@@ -56,34 +56,41 @@ async function resolveWorkspacePaths(root, workspaces) {
   return [...resolved];
 }
 
+function classifyWorkspace(root, wsPath, scriptName) {
+  const pkgFile = path.join(root, wsPath, "package.json");
+  let pkg;
+  try {
+    pkg = readJson(pkgFile);
+  }
+  catch (error) {
+    return error.code === "ENOENT" ? { kind: "absent" } : { kind: "invalid", message: error.message };
+  }
+
+  const script = pkg.scripts?.[scriptName];
+  if (!script) {
+    return { kind: "absent" };
+  }
+
+  return runner.hasOwnReporter(script) ? { kind: "ownReporterConflict" } : { kind: "eligible" };
+}
+
 function listEligibleWorkspaces(root, workspaces, scriptName) {
   const eligible = [];
   const ownReporterConflicts = [];
   const invalidPackageJson = [];
 
   for (const wsPath of workspaces) {
-    const pkgFile = path.join(root, wsPath, "package.json");
-    let pkg;
-    try {
-      pkg = readJson(pkgFile);
-    }
-    catch (error) {
-      if (error.code === "ENOENT") {
-        continue;
-      }
-      invalidPackageJson.push({ wsPath, message: error.message });
-      continue;
-    }
-
-    const script = pkg.scripts?.[scriptName];
-    if (!script) {
-      continue;
-    }
-    if (runner.hasOwnReporter(script)) {
-      ownReporterConflicts.push(wsPath);
-    }
-    else {
-      eligible.push(wsPath);
+    const classification = classifyWorkspace(root, wsPath, scriptName);
+    switch (classification.kind) {
+      case "invalid":
+        invalidPackageJson.push({ wsPath, message: classification.message });
+        break;
+      case "ownReporterConflict":
+        ownReporterConflicts.push(wsPath);
+        break;
+      case "eligible":
+        eligible.push(wsPath);
+        break;
     }
   }
 
@@ -107,6 +114,13 @@ function killWorkspaceChild(child) {
   }
 }
 
+function waitForExit(child) {
+  return new Promise((resolve, reject) => {
+    child.on("error", reject);
+    child.on("close", (code, signal) => resolve(code ?? (signal ? 1 : 0)));
+  });
+}
+
 async function captureWorkspaceOutput({ root, wsPath, scriptName, junitDestPath, activeChildren }) {
   const options = {
     cwd: root,
@@ -124,10 +138,7 @@ async function captureWorkspaceOutput({ root, wsPath, scriptName, junitDestPath,
   child.stderr.on("data", (chunk) => stderrChunks.push(chunk));
 
   try {
-    const exitCode = await new Promise((resolve, reject) => {
-      child.on("error", reject);
-      child.on("close", (code, signal) => resolve(code ?? (signal ? 1 : 0)));
-    });
+    const exitCode = await waitForExit(child);
 
     return {
       exitCode,
@@ -196,6 +207,23 @@ async function collectJunitEntries(results) {
   return { entries, missing };
 }
 
+// A worker leaves its slot in `results` undefined when it never got to start
+// (--ff stopped scheduling first); that's the signal to bucket it as skipped.
+function partitionResults(results, workspacesToRun) {
+  const completed = [];
+  const skipped = [];
+  for (const [index, result] of results.entries()) {
+    if (result === undefined) {
+      skipped.push(workspacesToRun[index]);
+    }
+    else {
+      completed.push(result);
+    }
+  }
+
+  return { completed, skipped };
+}
+
 async function runWorkspaces({ root, workspacesToRun, scriptName, ff, junitDir, concurrency }) {
   const results = new Array(workspacesToRun.length);
   const ciGroup = githubGroupSyntax(process.env);
@@ -234,18 +262,7 @@ async function runWorkspaces({ root, workspacesToRun, scriptName, ff, junitDir, 
   const workerCount = Math.max(1, Math.min(concurrency, workspacesToRun.length));
   await withInterruptHandling(activeChildren, () => Promise.all(Array.from({ length: workerCount }, worker)));
 
-  const completed = [];
-  const skipped = [];
-  for (const [index, result] of results.entries()) {
-    if (result === undefined) {
-      skipped.push(workspacesToRun[index]);
-    }
-    else {
-      completed.push(result);
-    }
-  }
-
-  return { completed, skipped };
+  return partitionResults(results, workspacesToRun);
 }
 
 const DEFAULT_JUNIT_FILENAME = "junit.xml";
