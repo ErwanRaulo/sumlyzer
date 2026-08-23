@@ -23,3 +23,11 @@ export class WorkspaceLaunchError extends Error {
     this.scriptName = scriptName;
   }
 }
+
+export class GitDiffError extends Error {
+  constructor(ref, reason) {
+    super(`could not compute changed files against "${ref}" (${reason})`);
+    this.name = "GitDiffError";
+    this.ref = ref;
+  }
+}

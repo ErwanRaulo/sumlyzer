@@ -1,0 +1,7 @@
+{
+  "name": "app-b",
+  "private": true,
+  "scripts": {
+    "test": "node --test \"./test/*.spec.mjs\""
+  }
+}

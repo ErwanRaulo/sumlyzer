@@ -63,6 +63,8 @@ Options:
 | `--ff` | off | fail fast: stop at the first failing workspace |
 | `--junit <path>` | off | write an aggregated JUnit XML report to `<path>` |
 | `-c, --concurrency <n>` | `1` | run up to `<n>` workspaces at once |
+| `--changed` | off | only run workspaces with changed files (git ref auto-detected, see `--ref`) |
+| `--ref <ref>` | auto-detect | git ref to diff against for `--changed` |
 | `-h, --help` | | print usage |
 
 Exit code is `1` if any workspace fails (even if every workspace's tests passed), `0` otherwise, wire it straight into CI without extra parsing.
@@ -77,6 +79,8 @@ This also applies when `--junit` can't write its report.
   expandable group, automatically, no flag needed
 - Concurrent runs (`--concurrency <n>`): run several workspaces' test scripts
   at once instead of one by one
+- Changed-only runs (`--changed`): only run workspaces whose own files changed
+  according to git
 
 ## Roadmap
 
@@ -157,6 +161,28 @@ workspace already running when the failure is detected runs to completion
 (sumlyzer doesn't kill in-flight processes).
 
 ![Concurrent run stopping early on failure](https://github.com/ErwanRaulo/sumlyzer/blob/main/concurrency-failed.png?raw=true)
+
+### Changed workspaces
+
+`--changed` only runs workspaces whose own files changed according to git,
+skipping the rest. It maps each changed file to the workspace directory that
+contains it.
+
+```
+npx sumlyzer --changed
+npx sumlyzer --changed --ref origin/main
+```
+
+Without `--ref`, the git ref to diff against is auto-detected:
+
+- Uncommitted changes present → diff against `HEAD` (the local dev loop).
+- Clean working tree with an upstream branch configured → diff against the
+  merge-base with that upstream, so commits already on the branch count as
+  "changed" without pulling in unrelated commits the upstream picked up in
+  the meantime.
+- Clean working tree with no upstream configured (or no common ancestor, e.g.
+  a shallow clone) → `HEAD`, which reports "no changes".
+
 
 ## Why
 

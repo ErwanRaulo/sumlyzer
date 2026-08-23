@@ -1,0 +1,8 @@
+{
+  "name": "changed-fixture",
+  "private": true,
+  "workspaces": [
+    "workspaces/app-a",
+    "workspaces/app-b"
+  ]
+}

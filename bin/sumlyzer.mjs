@@ -4,7 +4,7 @@ import path from "node:path";
 import { availableParallelism } from "node:os";
 
 import { main } from "../src/run.mjs";
-import { NoWorkspacesError, InvalidPackageJsonError, WorkspaceLaunchError } from "../src/errors.mjs";
+import { NoWorkspacesError, InvalidPackageJsonError, WorkspaceLaunchError, GitDiffError } from "../src/errors.mjs";
 import { red } from "../src/reporter.mjs";
 
 function printWorkspaceError(message) {
@@ -19,6 +19,8 @@ try {
       script: { type: "string", default: "test" },
       junit: { type: "string" },
       concurrency: { type: "string", short: "c", default: "1" },
+      changed: { type: "boolean", default: false },
+      ref: { type: "string" },
       help: { type: "boolean", short: "h", default: false }
     }
   }));
@@ -42,6 +44,11 @@ if (concurrency > maxConcurrency) {
   concurrency = maxConcurrency;
 }
 
+if (args.ref && !args.changed) {
+  console.info(`--ref only applies with --changed. Run "sumlyzer --help" for usage.`);
+  process.exit(1);
+}
+
 if (args.help) {
   console.log(`sumlyzer [options]
 
@@ -54,6 +61,8 @@ Options:
   --ff                  fail fast: stop at the first failing workspace
   --junit <path>        write an aggregated JUnit XML report to <path>
   -c, --concurrency <n> run up to <n> workspaces at once (default: 1)
+  --changed             only run workspaces with changes (git ref auto-detected, see --ref)
+  --ref <ref>           git ref to diff against for --changed (default: auto-detect)
   -h, --help            show this help
 `);
   process.exit(0);
@@ -65,14 +74,16 @@ try {
     scriptName: args.script,
     ff: args.ff,
     junitPath: args.junit,
-    concurrency
+    concurrency,
+    changed: args.changed,
+    ref: args.ref
   });
 }
 catch (error) {
   if (error instanceof NoWorkspacesError) {
     console.info(error.message);
   }
-  else if (error instanceof InvalidPackageJsonError || error instanceof WorkspaceLaunchError) {
+  else if (error instanceof InvalidPackageJsonError || error instanceof WorkspaceLaunchError || error instanceof GitDiffError) {
     printWorkspaceError(error.message);
   }
   else {

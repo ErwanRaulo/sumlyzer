@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
-import { mkdtemp, readFile, rm, symlink } from "node:fs/promises";
+import { cp, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
@@ -28,6 +28,7 @@ const INVALID_JSON_FIXTURE = path.join(TEST_PATH, "invalid-json-fixture");
 const GLOB_WORKSPACES_FIXTURE = path.join(TEST_PATH, "glob-workspaces-fixture");
 const INTERRUPT_FIXTURE = path.join(TEST_PATH, "interrupt-fixture");
 const INTERRUPT_MARKER = "sumlyzer-interrupt-fixture-marker";
+const CHANGED_FIXTURE = path.join(TEST_PATH, "changed-fixture");
 
 async function pgrepMatches(pattern) {
   try {
@@ -59,6 +60,22 @@ async function waitUntil(predicate, { timeoutMs = 5000, intervalMs = 100 } = {})
   throw new Error("waitUntil: condition was never met within the timeout");
 }
 
+async function git(args, cwd) {
+  return execFileAsync("git", args, { cwd });
+}
+
+async function gitFixture() {
+  const dir = await mkdtemp(path.join(tmpdir(), "sumlyzer-changed-"));
+  await cp(CHANGED_FIXTURE, dir, { recursive: true });
+
+  await git(["init", "-q"], dir);
+  await git(["add", "-A"], dir);
+  await git(["-c", "user.email=test@sumlyzer.dev", "-c", "user.name=sumlyzer tests", "commit", "-q", "-m", "baseline"], dir);
+  const { stdout: baseline } = await git(["rev-parse", "HEAD"], dir);
+
+  return { dir, baseline: baseline.trim() };
+}
+
 async function runCli(args, cwd, env) {
   // Avoid suite's own CI run setting GITHUB_ACTIONS=true, which would trigger the fold markers.
   // Also strip FORCE_COLOR: a shell that forces colors on would inject ANSI codes into stdout
@@ -86,6 +103,8 @@ describe("sumlyzer CLI behaviors", () => {
     assert.match(stdout, /--ff/);
     assert.match(stdout, /--junit <path>/);
     assert.match(stdout, /-c, --concurrency <n>/);
+    assert.match(stdout, /--changed\b/);
+    assert.match(stdout, /--ref <ref>/);
     assert.match(stdout, /-h, --help/);
   });
 
@@ -495,6 +514,122 @@ describe("sumlyzer run behavior", () => {
     assert.equal(code, 1);
     assert.match(stderr, /Could not write JUnit report to "\/no-such-directory\/report.xml"/);
     assert.doesNotMatch(stderr, /at async|node:internal/);
+  });
+});
+
+describe("sumlyzer --changed behavior", () => {
+  it("runs only the workspace with a changed file", async () => {
+    const { dir } = await gitFixture();
+    await writeFile(path.join(dir, "workspaces/app-a/NOTES.md"), "note\n");
+
+    const { stdout, code } = await runCli(["--changed"], dir);
+
+    assert.equal(code, 0);
+    assert.match(stdout, /running 1\/2 workspace\(s\) with changes/);
+    assert.match(stdout, /✓ app-a/);
+    assert.doesNotMatch(stdout, /app-b/);
+  });
+
+  it("ignores a changed file outside every workspace instead of running everything", async () => {
+    const { dir } = await gitFixture();
+    await writeFile(path.join(dir, "README.md"), "notes\n");
+
+    const { stdout, code } = await runCli(["--changed"], dir);
+
+    assert.equal(code, 0);
+    assert.match(stdout, /outside every workspace, ignoring/);
+    assert.match(stdout, /No eligible workspace changed\./);
+    assert.doesNotMatch(stdout, /✓ app-a/);
+    assert.doesNotMatch(stdout, /✓ app-b/);
+  });
+
+  it("ignores a root-level file while still running the workspace that actually changed", async () => {
+    const { dir } = await gitFixture();
+    await writeFile(path.join(dir, "README.md"), "notes\n");
+    await writeFile(path.join(dir, "workspaces/app-a/NOTES.md"), "note\n");
+
+    const { stdout, code } = await runCli(["--changed"], dir);
+
+    assert.equal(code, 0);
+    assert.match(stdout, /outside every workspace, ignoring/);
+    assert.match(stdout, /✓ app-a/);
+    assert.doesNotMatch(stdout, /app-b/);
+  });
+
+  it("--ref diffs against an explicit ref instead of auto-detecting", async () => {
+    const { dir, baseline } = await gitFixture();
+    await writeFile(path.join(dir, "workspaces/app-b/NOTES.md"), "note\n");
+    await git(["add", "-A"], dir);
+    await git(["-c", "user.email=test@sumlyzer.dev", "-c", "user.name=sumlyzer tests", "commit", "-q", "-m", "touch app-b"], dir);
+
+    const { stdout, code } = await runCli(["--changed", "--ref", baseline], dir);
+
+    assert.equal(code, 0);
+    assert.match(stdout, /✓ app-b/);
+    assert.doesNotMatch(stdout, /app-a/);
+    assert.doesNotMatch(stdout, /no --ref given/);
+  });
+
+  it("reports when nothing changed against the auto-detected ref", async () => {
+    const { dir } = await gitFixture();
+
+    const { stdout, code } = await runCli(["--changed"], dir);
+
+    assert.equal(code, 0);
+    assert.match(stdout, /no --ref given, comparing against "HEAD" \(no upstream configured\)/);
+    assert.match(stdout, /No changes detected against "HEAD"/);
+  });
+
+  it("auto-detects the merge-base with the upstream when the tree is clean and ahead", async () => {
+    const { dir } = await gitFixture();
+    await git(["branch", "origin/main"], dir);
+    await git(["branch", "--set-upstream-to=origin/main"], dir);
+    await writeFile(path.join(dir, "workspaces/app-b/NOTES.md"), "note\n");
+    await git(["add", "-A"], dir);
+    await git(["-c", "user.email=test@sumlyzer.dev", "-c", "user.name=sumlyzer tests", "commit", "-q", "-m", "touch app-b"], dir);
+
+    const { stdout, code } = await runCli(["--changed"], dir);
+
+    assert.equal(code, 0);
+    assert.ok(stdout.includes('comparing against "merge-base with "origin/main""'), stdout);
+    assert.match(stdout, /✓ app-b/);
+    assert.doesNotMatch(stdout, /app-a/);
+  });
+
+  it("prints a friendly message instead of a stack trace when the cwd isn't a git repo", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "sumlyzer-changed-no-git-"));
+    await cp(CHANGED_FIXTURE, dir, { recursive: true });
+
+    try {
+      const { stderr, code } = await runCli(["--changed"], dir);
+
+      assert.equal(code, 1);
+      assert.match(stderr, /could not compute changed files against "auto-detected"/);
+      assert.doesNotMatch(stderr, /at async|node:internal/);
+    }
+    finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects --ref without --changed", async () => {
+    const { dir } = await gitFixture();
+
+    const { stdout, code } = await runCli(["--ref", "HEAD"], dir);
+
+    assert.equal(code, 1);
+    assert.match(stdout, /--ref only applies with --changed/);
+  });
+
+  it("warns that no JUnit report is written when --changed leaves nothing to run", async () => {
+    const { dir } = await gitFixture();
+    const junitPath = path.join(dir, "junit.xml");
+
+    const { stdout, code } = await runCli(["--changed", "--junit", junitPath], dir);
+
+    assert.equal(code, 0);
+    assert.ok(stdout.includes(`--junit: no report written to "${junitPath}" (no workspace ran)`), stdout);
+    await assert.rejects(readFile(junitPath));
   });
 });
 
