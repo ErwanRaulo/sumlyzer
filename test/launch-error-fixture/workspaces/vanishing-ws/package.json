@@ -1,0 +1,7 @@
+{
+  "name": "vanishing-ws",
+  "private": true,
+  "scripts": {
+    "test": "echo should-not-run"
+  }
+}

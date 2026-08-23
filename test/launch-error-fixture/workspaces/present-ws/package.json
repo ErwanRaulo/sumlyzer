@@ -1,0 +1,7 @@
+{
+  "name": "present-ws",
+  "private": true,
+  "scripts": {
+    "test": "node -e \"setTimeout(() => {}, 300)\""
+  }
+}
