@@ -10,6 +10,7 @@ import { buildJunitReport } from "./junit.mjs";
 import { red, dim, workspaceName, githubGroupSyntax, printWorkspaceResult, printSummary, reportOutcome } from "./reporter.mjs";
 import { NoWorkspacesError, InvalidPackageJsonError, WorkspaceLaunchError } from "./errors.mjs";
 import { hasOwnReporter, prepareEnv, parseResult } from "./runners/nodeTest.mjs";
+import { getChangedFiles, resolveDefaultRef, selectChangedWorkspaces } from "./changed.mjs";
 
 const runner = { hasOwnReporter, prepareEnv, parseResult };
 
@@ -265,6 +266,47 @@ async function runWorkspaces({ root, workspacesToRun, scriptName, ff, junitDir, 
   return partitionResults(results, workspacesToRun);
 }
 
+// Resolves which ref to diff against: the explicit --ref, or an auto-detected
+// one (logged so the choice is never silent).
+function resolveRefToUse(root, explicitRef) {
+  if (explicitRef) {
+    return { ref: explicitRef, label: explicitRef };
+  }
+
+  const resolved = resolveDefaultRef(root);
+  console.log(dim(`--changed: no --ref given, comparing against "${resolved.label}" (${resolved.reason})`));
+  return resolved;
+}
+
+// Returns the filtered workspace list to run, or null when nothing should run
+// (already reported to the user), so main() can return early.
+function applyChangedFilter(root, resolvedWorkspaces, workspacesToRun, explicitRef) {
+  const { ref, label } = resolveRefToUse(root, explicitRef);
+
+  const changedFiles = getChangedFiles(root, ref);
+  if (changedFiles.length === 0) {
+    console.log(dim(`No changes detected against "${label}".`));
+    return null;
+  }
+
+  const { workspaces: changedWorkspaces, rootChangeFiles } = selectChangedWorkspaces(resolvedWorkspaces, changedFiles);
+
+  if (rootChangeFiles.length > 0) {
+    const suffix = rootChangeFiles.length > 1 ? ` (+${rootChangeFiles.length - 1} more)` : "";
+    console.log(dim(`--changed: "${rootChangeFiles[0]}"${suffix} is outside every workspace, ignoring`));
+  }
+
+  const filtered = workspacesToRun.filter((wsPath) => changedWorkspaces.has(wsPath));
+  console.log(dim(`--changed: running ${filtered.length}/${workspacesToRun.length} workspace(s) with changes since "${label}"`));
+
+  if (filtered.length === 0) {
+    console.log(dim("No eligible workspace changed."));
+    return null;
+  }
+
+  return filtered;
+}
+
 const DEFAULT_JUNIT_FILENAME = "junit.xml";
 
 async function resolveJunitDestination(root, junitPath) {
@@ -291,7 +333,7 @@ async function writeJunitReport(root, junitPath, results) {
   }
 }
 
-export async function main({ root, scriptName, ff, junitPath, concurrency = 1 }) {
+export async function main({ root, scriptName, ff, junitPath, concurrency = 1, changed = false, ref }) {
 
   const { workspaces } = readJson(path.join(root, "package.json"));
 
@@ -318,11 +360,22 @@ export async function main({ root, scriptName, ff, junitPath, concurrency = 1 })
     return;
   }
 
+  let finalWorkspacesToRun = workspacesToRun;
+  if (changed) {
+    finalWorkspacesToRun = applyChangedFilter(root, resolvedWorkspaces, workspacesToRun, ref);
+    if (finalWorkspacesToRun === null) {
+      if (junitPath) {
+        console.log(dim(`--junit: no report written to "${junitPath}" (no workspace ran)`));
+      }
+      return;
+    }
+  }
+
   const junitDir = junitPath ? await mkdtemp(path.join(tmpdir(), "sumlyzer-junit-")) : null;
 
   let completed, skipped;
   try {
-    ({ completed, skipped } = await runWorkspaces({ root, workspacesToRun, scriptName, ff, junitDir, concurrency }));
+    ({ completed, skipped } = await runWorkspaces({ root, workspacesToRun: finalWorkspacesToRun, scriptName, ff, junitDir, concurrency }));
 
     if (junitDir) {
       await writeJunitReport(root, junitPath, completed);
