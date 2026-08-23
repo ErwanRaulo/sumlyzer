@@ -72,13 +72,14 @@ function classifyWorkspace(root, wsPath, scriptName) {
     return { kind: "absent" };
   }
 
-  return runner.hasOwnReporter(script) ? { kind: "ownReporterConflict" } : { kind: "eligible" };
+  return runner.hasOwnReporter(script) ? { kind: "ownReporterConflict" } : { kind: "eligible", script };
 }
 
 function listEligibleWorkspaces(root, workspaces, scriptName) {
   const eligible = [];
   const ownReporterConflicts = [];
   const invalidPackageJson = [];
+  const scriptCommands = new Map();
 
   for (const wsPath of workspaces) {
     const classification = classifyWorkspace(root, wsPath, scriptName);
@@ -91,15 +92,32 @@ function listEligibleWorkspaces(root, workspaces, scriptName) {
         break;
       case "eligible":
         eligible.push(wsPath);
+        scriptCommands.set(wsPath, classification.script);
         break;
     }
   }
 
-  return { eligible, ownReporterConflicts, invalidPackageJson };
+  return { eligible, ownReporterConflicts, invalidPackageJson, scriptCommands };
 }
 
-// npm spawns the actual test runner as its own child, so killing just the "npm"
-// process leaves that grandchild running. Giving it its own process group (POSIX)
+function buildWorkspacePath(root, wsPath) {
+  const rootDir = path.resolve(root);
+  const binDirs = [];
+  let dir = path.resolve(root, wsPath);
+
+  while (true) {
+    binDirs.push(path.join(dir, "node_modules", ".bin"));
+    if (dir === rootDir) break;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+
+  return [...binDirs, process.env.PATH].join(path.delimiter);
+}
+
+// The spawned shell is the actual test runner's parent, so killing just it
+// leaves that grandchild running. Giving it its own process group (POSIX)
 // or asking Windows to kill the whole tree ensures nothing is left behind.
 function killWorkspaceChild(child) {
   if (process.platform === "win32") {
@@ -122,15 +140,15 @@ function waitForExit(child) {
   });
 }
 
-async function captureWorkspaceOutput({ root, wsPath, scriptName, junitDestPath, activeChildren }) {
+async function captureWorkspaceOutput({ root, wsPath, scriptCommand, junitDestPath, activeChildren }) {
   const options = {
-    cwd: root,
-    shell: process.platform === "win32",
+    cwd: path.join(root, wsPath),
+    shell: true,
     detached: process.platform !== "win32",
-    env: runner.prepareEnv(process.env, junitDestPath)
+    env: { ...runner.prepareEnv(process.env, junitDestPath), PATH: buildWorkspacePath(root, wsPath) }
   };
 
-  const child = spawn("npm", ["run", scriptName, "--workspace=" + wsPath], options);
+  const child = spawn(scriptCommand, options);
   activeChildren.add(child);
   const stdoutChunks = [];
   const stderrChunks = [];
@@ -176,9 +194,9 @@ async function withInterruptHandling(activeChildren, run) {
   }
 }
 
-async function runWorkspaceScript({ root, wsPath, scriptName, junitDestPath, activeChildren }) {
+async function runWorkspaceScript({ root, wsPath, scriptCommand, junitDestPath, activeChildren }) {
   const start = Date.now();
-  const captured = await captureWorkspaceOutput({ root, wsPath, scriptName, junitDestPath, activeChildren });
+  const captured = await captureWorkspaceOutput({ root, wsPath, scriptCommand, junitDestPath, activeChildren });
 
   return {
     wsPath,
@@ -225,7 +243,7 @@ function partitionResults(results, workspacesToRun) {
   return { completed, skipped };
 }
 
-async function runWorkspaces({ root, workspacesToRun, scriptName, ff, junitDir, concurrency }) {
+async function runWorkspaces({ root, workspacesToRun, scriptName, scriptCommands, ff, junitDir, concurrency }) {
   const results = new Array(workspacesToRun.length);
   const ciGroup = githubGroupSyntax(process.env);
   const activeChildren = new Set();
@@ -244,7 +262,7 @@ async function runWorkspaces({ root, workspacesToRun, scriptName, ff, junitDir, 
 
       let result;
       try {
-        result = await runWorkspaceScript({ root, wsPath, scriptName, junitDestPath, activeChildren });
+        result = await runWorkspaceScript({ root, wsPath, scriptCommand: scriptCommands.get(wsPath), junitDestPath, activeChildren });
       }
       catch (error) {
         stopScheduling = true;
@@ -343,7 +361,7 @@ export async function main({ root, scriptName, ff, junitPath, concurrency = 1, c
 
   const resolvedWorkspaces = await resolveWorkspacePaths(root, workspaces);
 
-  const { eligible: workspacesToRun, ownReporterConflicts, invalidPackageJson } = listEligibleWorkspaces(root, resolvedWorkspaces, scriptName);
+  const { eligible: workspacesToRun, ownReporterConflicts, invalidPackageJson, scriptCommands } = listEligibleWorkspaces(root, resolvedWorkspaces, scriptName);
 
   if (invalidPackageJson.length > 0) {
     throw new InvalidPackageJsonError(invalidPackageJson);
@@ -375,7 +393,7 @@ export async function main({ root, scriptName, ff, junitPath, concurrency = 1, c
 
   let completed, skipped;
   try {
-    ({ completed, skipped } = await runWorkspaces({ root, workspacesToRun: finalWorkspacesToRun, scriptName, ff, junitDir, concurrency }));
+    ({ completed, skipped } = await runWorkspaces({ root, workspacesToRun: finalWorkspacesToRun, scriptName, scriptCommands, ff, junitDir, concurrency }));
 
     if (junitDir) {
       await writeJunitReport(root, junitPath, completed);

@@ -11,13 +11,14 @@
   <a href="./LICENSE"><img src="https://img.shields.io/npm/l/sumlyzer.svg" alt="license" /></a>
 </p>
 
-
 ## Ever wished a faster feedback when testing your npm workspaces?
- 
-`npm run test --workspaces --if-present` runs every workspace, but gives you no
-aggregated summary and no way to fail fast, no way to catch an early failure that scrolled off screen.
 
-Sumlyzer gives you all those possibilities and even more like concurrency or JUnit reports.
+`npm run test --workspaces --if-present` runs every workspace, but gives no
+aggregated summary, no fail-fast, and lets an early failure scroll off screen
+unnoticed.
+
+Sumlyzer gives you all those possibilities and even more like concurrency
+(~3.5x faster on a real 15-workspace monorepo, see [Benchmark](#benchmark)) or JUnit reports.
 
 ## Requirements
 
@@ -26,19 +27,18 @@ Sumlyzer gives you all those possibilities and even more like concurrency or JUn
 
 ## Scope
 
-This tool is intentionally narrow: **npm workspaces** running **`node:test`**.
+Intentionally narrow: **npm workspaces** running **`node:test`**. It does not
+support pnpm/yarn workspaces or other test runners (Jest, Vitest, Mocha etc.),
+for the moment.
 
-It orchestrates `npm run <script> --workspace=<path>` for every workspace that
-declares the target script, and it parses node test's own output to build
-the global and per workspace summary. 
+It runs each workspace's script directly. No `npm run` in between, so npm's
+own `pre`/`post` lifecycle scripts (e.g. `pretest`) aren't invoked, only the
+target script itself.
 
-It does not support pnpm/yarn workspaces or other test runners
-(Jest, Vitest, Mocha etc.). (for the moment)
-
-sumlyzer forces its own `node:test` reporter onto every workspace via
-`NODE_OPTIONS`, so a workspace's `test` script should just run `node --test`
-without configuring its own `--test-reporter`.
-sumlyzer detects this ahead of time and skips that workspace instead of running into it.
+sumlyzer forces its own `node:test` reporter via `NODE_OPTIONS`, so a
+workspace's script should just run `node --test`. One that sets its own
+`--test-reporter` is detected ahead of time and skipped instead of colliding
+with it.
 
 ## Install
 
@@ -67,20 +67,21 @@ Options:
 | `--ref <ref>` | auto-detect | git ref to diff against for `--changed` |
 | `-h, --help` | | print usage |
 
-Exit code is `1` if any workspace fails (even if every workspace's tests passed), `0` otherwise, wire it straight into CI without extra parsing.
-This also applies when `--junit` can't write its report.
+Exit code is `1` if any workspace fails, `0` otherwise. Safe to wire straight
+into CI without extra parsing. This also applies when `--junit` can't write
+its report.
 
-## Features
+## Benchmark
 
-- Aggregated pass/fail summary table.
-- Fail-fast (`--ff`): stop at the first failing workspace
-- Aggregated JUnit XML report (`--junit`), merging every workspace's own results
-- GitHub Actions log folding: each workspace's output collapsed into an
-  expandable group, automatically, no flag needed
-- Concurrent runs (`--concurrency <n>`): run several workspaces' test scripts
-  at once instead of one by one
-- Changed-only runs (`--changed`): only run workspaces whose own files changed
-  according to git
+Measured on a real 15-workspace monorepo where each workspace's `test` script does real work (coverage + type-checking), averaged over a few runs on the same machine:
+
+| Command                                  | Wall-clock time |
+| ----------------------------------------- | ---------------- |
+| `npm run test --workspaces --if-present`  | ~22s             |
+| `sumlyzer` (default, sequential)          | ~21s             |
+| `sumlyzer --concurrency 8`                | **~6s**          |
+
+See [Concurrency](#concurrency) for where that gain comes from.
 
 ## Roadmap
 
@@ -97,7 +98,7 @@ This also applies when `--junit` can't write its report.
 | --------------- | ------------------------------------------------------------------------------------------------ |
 | `(index)`       | Workspace name |
 | `status`        | `PASS`, `FAIL`, or `SKIPPED` (reached when `--ff` stopped scheduling before this workspace ran) |
-| `duration`      | Wall-clock time for the whole `npm run <script> --workspace=<path>` process, including npm/spawn overhead |
+| `duration`      | Wall-clock time for the workspace's script process, including spawn overhead |
 | `tests`         | Total number of tests node:test ran in that workspace                                            |
 | `pass`          | Number of passing tests                                                                          |
 | `fail`          | Number of failing tests                                                                          |
@@ -108,6 +109,7 @@ has a nonzero count. Instead, sumlyzer prints a footnote below the table,
 naming only the workspaces that actually have some, e.g. `skipped tests:
 flags (2)`.
 
+## Reference
 
 ### JUnit report
 
@@ -116,7 +118,7 @@ every workspace's own `node:test` results. Each workspace runs with `node:test`'
 built-in `junit` reporter enabled alongside the terminal one, and sumlyzer combines
 the resulting files into one document, prefixing every `<testsuite>` name with the
 workspace it came from so CI test-report UIs (GitLab, Jenkins, Azure DevOps, ...)
-can tell them apart. 
+can tell them apart.
 
 ```
 npx sumlyzer --junit reports/junit.xml
@@ -137,11 +139,10 @@ prints a warning naming it.
 
 On GitHub Actions (detected via `GITHUB_ACTIONS=true`), each workspace's full
 `node:test` output is wrapped in a collapsible `::group::`/`::endgroup::`
-section instead of the terminal's formal.
+section instead of the terminal's format.
 
-This is automatic, no flag needed, and keeps the job log short by default
-while still letting you expand any workspace, passing or failing, to see its
-full suite output. 
+This is automatic, no flag needed, keeping the job log short while still
+letting you expand any workspace's full output.
 
 No other CI provider is currently supported: GitHub is the
 only one whose log folding sumlyzer has actually verified end-to-end.
@@ -149,8 +150,9 @@ only one whose log folding sumlyzer has actually verified end-to-end.
 ### Concurrency
 
 `--concurrency <n>` runs up to `<n>` workspaces' scripts at the same time
-instead of one after another, which can noticeably cut wall-clock time on
-projects with many workspaces.
+instead of one after another (something npm doesn't support natively) 
+which can noticeably cut wall-clock time on projects with
+many workspaces (see [Benchmark](#benchmark)).
 
 Since workspaces can now finish in any order, their output interleaves in
 whatever order they complete, rather than following the `workspaces` list
@@ -182,7 +184,6 @@ Without `--ref`, the git ref to diff against is auto-detected:
   the meantime.
 - Clean working tree with no upstream configured (or no common ancestor, e.g.
   a shallow clone) → `HEAD`, which reports "no changes".
-
 
 ## Why
 

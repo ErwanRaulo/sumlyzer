@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
-import { cp, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
@@ -29,6 +29,7 @@ const GLOB_WORKSPACES_FIXTURE = path.join(TEST_PATH, "glob-workspaces-fixture");
 const INTERRUPT_FIXTURE = path.join(TEST_PATH, "interrupt-fixture");
 const INTERRUPT_MARKER = "sumlyzer-interrupt-fixture-marker";
 const CHANGED_FIXTURE = path.join(TEST_PATH, "changed-fixture");
+const LAUNCH_ERROR_FIXTURE = path.join(TEST_PATH, "launch-error-fixture");
 
 async function pgrepMatches(pattern) {
   try {
@@ -39,14 +40,6 @@ async function pgrepMatches(pattern) {
     // pgrep exits 1 (no stdout) when nothing matches.
     return false;
   }
-}
-
-// A PATH containing only a "node" symlink: enough to launch the CLI itself,
-// but any spawn("npm", ...) it does will fail to resolve and error out.
-async function pathWithoutNpm() {
-  const dir = await mkdtemp(path.join(tmpdir(), "sumlyzer-no-npm-"));
-  await symlink(process.execPath, path.join(dir, "node"));
-  return dir;
 }
 
 async function waitUntil(predicate, { timeoutMs = 5000, intervalMs = 100 } = {}) {
@@ -62,6 +55,15 @@ async function waitUntil(predicate, { timeoutMs = 5000, intervalMs = 100 } = {})
 
 async function git(args, cwd) {
   return execFileAsync("git", args, { cwd });
+}
+
+// Copied to a scratch dir because the "vanishes before launch" test below
+// deletes vanishing-ws's directory: running this in place would permanently
+// delete part of the fixture from the repo itself.
+async function launchErrorFixture() {
+  const dir = await mkdtemp(path.join(tmpdir(), "sumlyzer-launch-error-"));
+  await cp(LAUNCH_ERROR_FIXTURE, dir, { recursive: true });
+  return dir;
 }
 
 async function gitFixture() {
@@ -387,25 +389,34 @@ describe("sumlyzer run behavior", () => {
     assert.doesNotMatch(stdout, /workspaces passed/);
   });
 
-  it("stops scheduling and reports the workspace when npm itself can't be launched", async () => {
-    const noNpmPath = await pathWithoutNpm();
+  it("stops scheduling and reports the workspace when spawning its script fails", async () => {
+    const dir = await launchErrorFixture();
+    const child = spawn("node", [BIN, "--concurrency", "1"], { cwd: dir });
+    let stdout = "";
+    let stderr = "";
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
 
-    try {
-      const { stdout, stderr, code } = await runCli(["--concurrency", "1"], RUN_FIXTURE, { PATH: noNpmPath });
+    await new Promise((resolve, reject) => {
+      child.stdout.on("data", (chunk) => {
+        stdout += chunk;
+        if (stdout.includes("running present-ws")) {
+          resolve();
+        }
+      });
+      child.on("error", reject);
+    });
 
-      assert.equal(code, 1);
-      assert.match(stderr, /✗ fail-ws: could not launch "test" \(spawn npm ENOENT\)/);
+    await rm(path.join(dir, "workspaces", "vanishing-ws"), { recursive: true, force: true });
 
-      // the launch error aborts the whole run: only the first eligible workspace
-      // is even attempted, nothing after it gets scheduled.
-      assert.match(stdout, /running fail-ws/);
-      assert.doesNotMatch(stdout, /running pass-ws/);
-      assert.doesNotMatch(stdout, /running custom-runner-ws/);
-      assert.doesNotMatch(stdout, /workspace\(s\) failed/);
-    }
-    finally {
-      await rm(noNpmPath, { recursive: true, force: true });
-    }
+    const code = await new Promise((resolve) => child.on("close", resolve));
+
+    assert.equal(code, 1);
+    assert.match(stderr, /✗ vanishing-ws: could not launch "test" \(spawn.*ENOENT\)/);
+
+    // the launch error aborts the whole run: nothing scheduled after it runs.
+    assert.match(stdout, /running present-ws/);
+    assert.match(stdout, /running vanishing-ws/);
+    assert.doesNotMatch(stdout, /workspace\(s\) failed/);
   });
 
   it("kills the underlying test process on SIGINT instead of leaving it orphaned", async () => {
