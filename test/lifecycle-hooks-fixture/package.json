@@ -1,0 +1,9 @@
+{
+  "name": "lifecycle-hooks-fixture",
+  "private": true,
+  "workspaces": [
+    "workspaces/hooks-pass-ws",
+    "workspaces/pretest-fails-ws",
+    "workspaces/posttest-fails-ws"
+  ]
+}

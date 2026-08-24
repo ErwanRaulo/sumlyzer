@@ -1,0 +1,8 @@
+{
+  "name": "pretest-fails-ws",
+  "private": true,
+  "scripts": {
+    "pretest": "echo pretest-fails-ws-pretest-ran && exit 1",
+    "test": "echo pretest-fails-ws-test-should-not-run"
+  }
+}

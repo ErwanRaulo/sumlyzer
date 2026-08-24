@@ -72,7 +72,11 @@ function classifyWorkspace(root, wsPath, scriptName) {
     return { kind: "absent" };
   }
 
-  return runner.hasOwnReporter(script) ? { kind: "ownReporterConflict" } : { kind: "eligible", script };
+  const pre = pkg.scripts?.[`pre${scriptName}`];
+  const post = pkg.scripts?.[`post${scriptName}`];
+
+  const hasConflict = [pre, script, post].some((command) => command && runner.hasOwnReporter(command));
+  return hasConflict ? { kind: "ownReporterConflict" } : { kind: "eligible", pre, script, post };
 }
 
 function listEligibleWorkspaces(root, workspaces, scriptName) {
@@ -92,7 +96,7 @@ function listEligibleWorkspaces(root, workspaces, scriptName) {
         break;
       case "eligible":
         eligible.push(wsPath);
-        scriptCommands.set(wsPath, classification.script);
+        scriptCommands.set(wsPath, { pre: classification.pre, script: classification.script, post: classification.post });
         break;
     }
   }
@@ -140,15 +144,8 @@ function waitForExit(child) {
   });
 }
 
-async function captureWorkspaceOutput({ root, wsPath, scriptCommand, junitDestPath, activeChildren }) {
-  const options = {
-    cwd: path.join(root, wsPath),
-    shell: true,
-    detached: process.platform !== "win32",
-    env: { ...runner.prepareEnv(process.env, junitDestPath), PATH: buildWorkspacePath(root, wsPath) }
-  };
-
-  const child = spawn(scriptCommand, options);
+async function runPhase(command, options, activeChildren) {
+  const child = spawn(command, options);
   activeChildren.add(child);
   const stdoutChunks = [];
   const stderrChunks = [];
@@ -158,16 +155,41 @@ async function captureWorkspaceOutput({ root, wsPath, scriptCommand, junitDestPa
 
   try {
     const exitCode = await waitForExit(child);
-
-    return {
-      exitCode,
-      stdout: Buffer.concat(stdoutChunks).toString("utf8"),
-      stderr: Buffer.concat(stderrChunks).toString("utf8")
-    };
+    return { exitCode, stdoutChunks, stderrChunks };
   }
   finally {
     activeChildren.delete(child);
   }
+}
+
+async function captureWorkspaceOutput({ root, wsPath, scriptPhases, junitDestPath, activeChildren }) {
+  const options = {
+    cwd: path.join(root, wsPath),
+    shell: true,
+    detached: process.platform !== "win32",
+    env: { ...runner.prepareEnv(process.env, junitDestPath), PATH: buildWorkspacePath(root, wsPath) }
+  };
+
+  const stdoutChunks = [];
+  const stderrChunks = [];
+  let exitCode = 0;
+
+  for (const command of [scriptPhases.pre, scriptPhases.script, scriptPhases.post].filter(Boolean)) {
+    const phase = await runPhase(command, options, activeChildren);
+    exitCode = phase.exitCode;
+    stdoutChunks.push(...phase.stdoutChunks);
+    stderrChunks.push(...phase.stderrChunks);
+
+    if (exitCode !== 0) {
+      break;
+    }
+  }
+
+  return {
+    exitCode,
+    stdout: Buffer.concat(stdoutChunks).toString("utf8"),
+    stderr: Buffer.concat(stderrChunks).toString("utf8")
+  };
 }
 
 function killActiveChildren(activeChildren) {
@@ -194,9 +216,9 @@ async function withInterruptHandling(activeChildren, run) {
   }
 }
 
-async function runWorkspaceScript({ root, wsPath, scriptCommand, junitDestPath, activeChildren }) {
+async function runWorkspaceScript({ root, wsPath, scriptPhases, junitDestPath, activeChildren }) {
   const start = Date.now();
-  const captured = await captureWorkspaceOutput({ root, wsPath, scriptCommand, junitDestPath, activeChildren });
+  const captured = await captureWorkspaceOutput({ root, wsPath, scriptPhases, junitDestPath, activeChildren });
 
   return {
     wsPath,
@@ -262,7 +284,7 @@ async function runWorkspaces({ root, workspacesToRun, scriptName, scriptCommands
 
       let result;
       try {
-        result = await runWorkspaceScript({ root, wsPath, scriptCommand: scriptCommands.get(wsPath), junitDestPath, activeChildren });
+        result = await runWorkspaceScript({ root, wsPath, scriptPhases: scriptCommands.get(wsPath), junitDestPath, activeChildren });
       }
       catch (error) {
         stopScheduling = true;

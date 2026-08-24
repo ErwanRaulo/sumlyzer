@@ -3,6 +3,7 @@
   "private": true,
   "workspaces": [
     "workspaces/normal-ws",
-    "workspaces/own-reporter-ws"
+    "workspaces/own-reporter-ws",
+    "workspaces/pretest-reporter-ws"
   ]
 }
