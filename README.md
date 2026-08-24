@@ -28,17 +28,16 @@ Sumlyzer gives you all those possibilities and even more like concurrency
 ## Scope
 
 Intentionally narrow: **npm workspaces** running **`node:test`**. It does not
-support pnpm/yarn workspaces or other test runners (Jest, Vitest, Mocha etc.),
-for the moment.
+support pnpm/yarn workspaces or other test runners (Jest, Vitest, Mocha etc.) for the moment.
 
-It runs each workspace's script directly. No `npm run` in between, so npm's
-own `pre`/`post` lifecycle scripts (e.g. `pretest`) aren't invoked, only the
-target script itself.
+It runs each workspace's script directly (no `npm run` in between) but still
+chains its `pre`/`post` lifecycle scripts (e.g. `pretest`) itself, with the
+same semantics as `npm run`: a failing `pre<script>` skips the rest, and a
+failing `post<script>` still fails the workspace even if the main script passed.
 
 sumlyzer forces its own `node:test` reporter via `NODE_OPTIONS`, so a
-workspace's script should just run `node --test`. One that sets its own
-`--test-reporter` is detected ahead of time and skipped instead of colliding
-with it.
+workspace that sets its own `--test-reporter` is detected ahead of time
+and skipped instead of colliding with it.
 
 ## Install
 

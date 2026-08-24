@@ -1,0 +1,9 @@
+{
+  "name": "hooks-pass-ws",
+  "private": true,
+  "scripts": {
+    "pretest": "node -e \"require('fs').writeFileSync(require('path').join(process.env.LIFECYCLE_MARKER_DIR, 'pretest'), '')\"",
+    "test": "node -e \"require('fs').writeFileSync(require('path').join(process.env.LIFECYCLE_MARKER_DIR, 'test'), '')\"",
+    "posttest": "node -e \"require('fs').writeFileSync(require('path').join(process.env.LIFECYCLE_MARKER_DIR, 'posttest'), '')\""
+  }
+}

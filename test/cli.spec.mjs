@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
-import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
@@ -30,6 +30,7 @@ const INTERRUPT_FIXTURE = path.join(TEST_PATH, "interrupt-fixture");
 const INTERRUPT_MARKER = "sumlyzer-interrupt-fixture-marker";
 const CHANGED_FIXTURE = path.join(TEST_PATH, "changed-fixture");
 const LAUNCH_ERROR_FIXTURE = path.join(TEST_PATH, "launch-error-fixture");
+const LIFECYCLE_HOOKS_FIXTURE = path.join(TEST_PATH, "lifecycle-hooks-fixture");
 
 async function pgrepMatches(pattern) {
   try {
@@ -419,6 +420,29 @@ describe("sumlyzer run behavior", () => {
     assert.doesNotMatch(stdout, /workspace\(s\) failed/);
   });
 
+  it("chains pretest/posttest around the main script, matching npm run's own short-circuit semantics", async () => {
+    const markerDir = await mkdtemp(path.join(tmpdir(), "sumlyzer-lifecycle-"));
+    const { stdout, code } = await runCli([], LIFECYCLE_HOOKS_FIXTURE, { LIFECYCLE_MARKER_DIR: markerDir });
+
+    assert.equal(code, 1);
+
+    // hooks-pass-ws: pretest, test and posttest all actually ran.
+    await assert.doesNotReject(access(path.join(markerDir, "pretest")));
+    await assert.doesNotReject(access(path.join(markerDir, "test")));
+    await assert.doesNotReject(access(path.join(markerDir, "posttest")));
+
+    // pretest-fails-ws: a failing pretest blocks the main script entirely.
+    assert.match(stdout, /pretest-fails-ws-pretest-ran/);
+    assert.doesNotMatch(stdout, /pretest-fails-ws-test-should-not-run/);
+    assert.match(stdout, /✗ pretest-fails-ws failed/);
+
+    // posttest-fails-ws: the main script passed, but a failing posttest still
+    // fails the workspace overall.
+    assert.match(stdout, /posttest-fails-ws-test-ran/);
+    assert.match(stdout, /posttest-fails-ws-posttest-ran/);
+    assert.match(stdout, /✗ posttest-fails-ws failed/);
+  });
+
   it("kills the underlying test process on SIGINT instead of leaving it orphaned", async () => {
     const child = spawn("node", [BIN], { cwd: INTERRUPT_FIXTURE });
     let stdout = "";
@@ -453,6 +477,14 @@ describe("sumlyzer run behavior", () => {
     assert.match(stdout, /⊘ own-reporter-ws: skipped, own --test-reporter detected in its "test" script/);
     assert.doesNotMatch(stdout, /running own-reporter-ws/);
     assert.match(stdout, /1\/1 workspaces passed\./);
+  });
+
+  it("also skips a workspace whose pretest (not the main script) sets --test-reporter", async () => {
+    const { stdout, code } = await runCli([], OWN_REPORTER_FIXTURE);
+
+    assert.equal(code, 0);
+    assert.match(stdout, /⊘ pretest-reporter-ws: skipped, own --test-reporter detected in its "test" script/);
+    assert.doesNotMatch(stdout, /running pretest-reporter-ws/);
   });
 
   it("prints a dedicated message when every workspace with the target script was skipped for its own reporter", async () => {

@@ -1,0 +1,8 @@
+{
+  "name": "posttest-fails-ws",
+  "private": true,
+  "scripts": {
+    "test": "echo posttest-fails-ws-test-ran",
+    "posttest": "echo posttest-fails-ws-posttest-ran && exit 1"
+  }
+}
