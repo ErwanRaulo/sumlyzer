@@ -4,6 +4,7 @@
   "workspaces": [
     "workspaces/normal-ws",
     "workspaces/own-reporter-ws",
-    "workspaces/pretest-reporter-ws"
+    "workspaces/pretest-reporter-ws",
+    "workspaces/posttest-reporter-ws"
   ]
 }

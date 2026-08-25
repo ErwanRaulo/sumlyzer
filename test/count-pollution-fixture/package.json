@@ -1,0 +1,7 @@
+{
+  "name": "count-pollution-fixture",
+  "private": true,
+  "workspaces": [
+    "workspaces/count-pollution-ws"
+  ]
+}

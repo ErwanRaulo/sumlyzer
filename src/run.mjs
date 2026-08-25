@@ -162,19 +162,35 @@ async function runPhase(command, options, activeChildren) {
   }
 }
 
-async function captureWorkspaceOutput({ root, wsPath, scriptPhases, junitDestPath, activeChildren }) {
-  const options = {
-    cwd: path.join(root, wsPath),
-    shell: true,
-    detached: process.platform !== "win32",
-    env: { ...runner.prepareEnv(process.env, junitDestPath), PATH: buildWorkspacePath(root, wsPath) }
+// Only the main script gets sumlyzer's own node:test reporter forced onto it via
+// NODE_OPTIONS. pre/post run with a plain environment: forcing our JSON reporter onto
+// them too would let a hook that happens to run its own `node --test` silently overwrite
+// the main script's parsed counts/JUnit report with its own, whichever phase runs last.
+function buildPhaseOptions({ root, wsPath, junitDestPath }) {
+  const cwd = path.join(root, wsPath);
+  const PATH = buildWorkspacePath(root, wsPath);
+  const shellOptions = { cwd, shell: true, detached: process.platform !== "win32" };
+
+  return {
+    hook: { ...shellOptions, env: { ...process.env, PATH } },
+    script: { ...shellOptions, env: { ...runner.prepareEnv(process.env, junitDestPath), PATH } }
   };
+}
+
+async function captureWorkspaceOutput({ root, wsPath, scriptPhases, junitDestPath, activeChildren }) {
+  const phaseOptions = buildPhaseOptions({ root, wsPath, junitDestPath });
+
+  const phases = [
+    scriptPhases.pre && { command: scriptPhases.pre, options: phaseOptions.hook },
+    { command: scriptPhases.script, options: phaseOptions.script },
+    scriptPhases.post && { command: scriptPhases.post, options: phaseOptions.hook }
+  ].filter(Boolean);
 
   const stdoutChunks = [];
   const stderrChunks = [];
   let exitCode = 0;
 
-  for (const command of [scriptPhases.pre, scriptPhases.script, scriptPhases.post].filter(Boolean)) {
+  for (const { command, options } of phases) {
     const phase = await runPhase(command, options, activeChildren);
     exitCode = phase.exitCode;
     stdoutChunks.push(...phase.stdoutChunks);

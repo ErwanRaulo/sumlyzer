@@ -1,0 +1,7 @@
+{
+  "name": "after-ws",
+  "private": true,
+  "scripts": {
+    "test": "echo should-not-run-after"
+  }
+}

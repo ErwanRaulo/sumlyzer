@@ -31,6 +31,8 @@ const INTERRUPT_MARKER = "sumlyzer-interrupt-fixture-marker";
 const CHANGED_FIXTURE = path.join(TEST_PATH, "changed-fixture");
 const LAUNCH_ERROR_FIXTURE = path.join(TEST_PATH, "launch-error-fixture");
 const LIFECYCLE_HOOKS_FIXTURE = path.join(TEST_PATH, "lifecycle-hooks-fixture");
+const BIN_RESOLUTION_FIXTURE = path.join(TEST_PATH, "bin-resolution-fixture");
+const COUNT_POLLUTION_FIXTURE = path.join(TEST_PATH, "count-pollution-fixture");
 
 async function pgrepMatches(pattern) {
   try {
@@ -417,7 +419,21 @@ describe("sumlyzer run behavior", () => {
     // the launch error aborts the whole run: nothing scheduled after it runs.
     assert.match(stdout, /running present-ws/);
     assert.match(stdout, /running vanishing-ws/);
+    assert.doesNotMatch(stdout, /running after-ws/);
     assert.doesNotMatch(stdout, /workspace\(s\) failed/);
+  });
+
+  it("resolves a script's own node_modules/.bin, falling back to the root's for hoisted bins", async () => {
+    const { stdout } = await runCli([], BIN_RESOLUTION_FIXTURE);
+
+    const [, hoistedBlock, localBlock] = stdout.split(/✗ (?:hoisted|local)-bin-ws failed/);
+
+    // hoisted-bin-ws has no .bin of its own: it must reach the root's node_modules/.bin.
+    assert.match(hoistedBlock, /shared-bin-ran-from-root/);
+
+    // local-bin-ws ships its own same-named bin, which must win over the root's.
+    assert.match(localBlock, /shared-bin-ran-from-local-bin-ws/);
+    assert.doesNotMatch(localBlock, /shared-bin-ran-from-root/);
   });
 
   it("chains pretest/posttest around the main script, matching npm run's own short-circuit semantics", async () => {
@@ -441,6 +457,16 @@ describe("sumlyzer run behavior", () => {
     assert.match(stdout, /posttest-fails-ws-test-ran/);
     assert.match(stdout, /posttest-fails-ws-posttest-ran/);
     assert.match(stdout, /✗ posttest-fails-ws failed/);
+  });
+
+  it("doesn't let a posttest that also runs node --test overwrite the main script's own counts", async () => {
+    const { stdout, code } = await runCli([], COUNT_POLLUTION_FIXTURE);
+
+    assert.equal(code, 0);
+    // count-pollution-ws's main "test" script has 5 passing tests; its "posttest" is a
+    // separate, unrelated 1-test node --test check. Only the main script's own counts
+    // should end up in the summary table.
+    assert.match(stdout, /│ count-pollution-ws +│ 'PASS' +│ [^│]+│ 5 +│ 5 +│ 0 +│/);
   });
 
   it("kills the underlying test process on SIGINT instead of leaving it orphaned", async () => {
@@ -485,6 +511,14 @@ describe("sumlyzer run behavior", () => {
     assert.equal(code, 0);
     assert.match(stdout, /⊘ pretest-reporter-ws: skipped, own --test-reporter detected in its "test" script/);
     assert.doesNotMatch(stdout, /running pretest-reporter-ws/);
+  });
+
+  it("also skips a workspace whose posttest (not the main script) sets --test-reporter", async () => {
+    const { stdout, code } = await runCli([], OWN_REPORTER_FIXTURE);
+
+    assert.equal(code, 0);
+    assert.match(stdout, /⊘ posttest-reporter-ws: skipped, own --test-reporter detected in its "test" script/);
+    assert.doesNotMatch(stdout, /running posttest-reporter-ws/);
   });
 
   it("prints a dedicated message when every workspace with the target script was skipped for its own reporter", async () => {

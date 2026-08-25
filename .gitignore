@@ -1,3 +1,12 @@
 node_modules/
 coverage/
 *.log
+
+# Fixture .bin shims that exercise buildWorkspacePath's own node_modules/.bin
+# resolution: real files, not an actual npm install, so they're worth tracking.
+!test/bin-resolution-fixture/node_modules/
+!test/bin-resolution-fixture/node_modules/.bin/
+!test/bin-resolution-fixture/node_modules/.bin/shared-bin
+!test/bin-resolution-fixture/workspaces/local-bin-ws/node_modules/
+!test/bin-resolution-fixture/workspaces/local-bin-ws/node_modules/.bin/
+!test/bin-resolution-fixture/workspaces/local-bin-ws/node_modules/.bin/shared-bin

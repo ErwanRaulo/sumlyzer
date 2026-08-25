@@ -1,5 +1,5 @@
 {
   "name": "launch-error-fixture",
   "private": true,
-  "workspaces": ["workspaces/present-ws", "workspaces/vanishing-ws"]
+  "workspaces": ["workspaces/present-ws", "workspaces/vanishing-ws", "workspaces/after-ws"]
 }
