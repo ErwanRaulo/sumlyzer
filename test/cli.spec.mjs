@@ -1,14 +1,14 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
-import { access, cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { access, cp, readFile, rm, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { availableParallelism } from "node:os";
 
 import { assertWellFormedXml } from "./xmlAssertions.mjs";
+import { git, commitAll, copyFixture, withTempDir } from "./gitTestHelpers.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -56,26 +56,37 @@ async function waitUntil(predicate, { timeoutMs = 5000, intervalMs = 100 } = {})
   throw new Error("waitUntil: condition was never met within the timeout");
 }
 
-async function git(args, cwd) {
-  return execFileAsync("git", args, { cwd });
+// Spawns command/args, resolving `ready` once `marker` shows up in stdout.
+function spawnAndWaitForOutput(command, args, options, marker) {
+  const child = spawn(command, args, options);
+  const output = { stdout: "", stderr: "" };
+  child.stderr?.on("data", (chunk) => { output.stderr += chunk; });
+
+  const ready = new Promise((resolve, reject) => {
+    child.on("error", reject);
+    child.stdout.on("data", (chunk) => {
+      output.stdout += chunk;
+      if (output.stdout.includes(marker)) {
+        resolve();
+      }
+    });
+  });
+
+  return { child, output, ready };
 }
 
 // Copied to a scratch dir because the "vanishes before launch" test below
 // deletes vanishing-ws's directory: running this in place would permanently
 // delete part of the fixture from the repo itself.
 async function launchErrorFixture() {
-  const dir = await mkdtemp(path.join(tmpdir(), "sumlyzer-launch-error-"));
-  await cp(LAUNCH_ERROR_FIXTURE, dir, { recursive: true });
-  return dir;
+  return copyFixture(LAUNCH_ERROR_FIXTURE, "sumlyzer-launch-error-");
 }
 
 async function gitFixture() {
-  const dir = await mkdtemp(path.join(tmpdir(), "sumlyzer-changed-"));
-  await cp(CHANGED_FIXTURE, dir, { recursive: true });
+  const dir = await copyFixture(CHANGED_FIXTURE, "sumlyzer-changed-");
 
   await git(["init", "-q"], dir);
-  await git(["add", "-A"], dir);
-  await git(["-c", "user.email=test@sumlyzer.dev", "-c", "user.name=sumlyzer tests", "commit", "-q", "-m", "baseline"], dir);
+  await commitAll(dir, "baseline");
   const { stdout: baseline } = await git(["rev-parse", "HEAD"], dir);
 
   return { dir, baseline: baseline.trim() };
@@ -355,10 +366,8 @@ describe("sumlyzer run behavior", () => {
   });
 
   it("--junit warns when a workspace's script never produced a junit file (e.g. --script isn't node:test)", async () => {
-    const outDir = await mkdtemp(path.join(tmpdir(), "sumlyzer-junit-cli-"));
-    const outFile = path.join(outDir, "report.xml");
-
-    try {
+    await withTempDir("sumlyzer-junit-cli-", async (outDir) => {
+      const outFile = path.join(outDir, "report.xml");
       const { stdout, code } = await runCli(["--script", "verify", "--junit", outFile], RUN_FIXTURE);
 
       assert.equal(code, 0);
@@ -366,10 +375,7 @@ describe("sumlyzer run behavior", () => {
 
       const report = await readFile(outFile, "utf8");
       assertWellFormedXml(report);
-    }
-    finally {
-      await rm(outDir, { recursive: true, force: true });
-    }
+    });
   });
 
   it("prints a clear message and exits 0 when no workspace has the target script, instead of crashing", async () => {
@@ -394,33 +400,21 @@ describe("sumlyzer run behavior", () => {
 
   it("stops scheduling and reports the workspace when spawning its script fails", async () => {
     const dir = await launchErrorFixture();
-    const child = spawn("node", [BIN, "--concurrency", "1"], { cwd: dir });
-    let stdout = "";
-    let stderr = "";
-    child.stderr.on("data", (chunk) => { stderr += chunk; });
-
-    await new Promise((resolve, reject) => {
-      child.stdout.on("data", (chunk) => {
-        stdout += chunk;
-        if (stdout.includes("running present-ws")) {
-          resolve();
-        }
-      });
-      child.on("error", reject);
-    });
+    const { child, output, ready } = spawnAndWaitForOutput("node", [BIN, "--concurrency", "1"], { cwd: dir }, "running present-ws");
+    await ready;
 
     await rm(path.join(dir, "workspaces", "vanishing-ws"), { recursive: true, force: true });
 
     const code = await new Promise((resolve) => child.on("close", resolve));
 
     assert.equal(code, 1);
-    assert.match(stderr, /✗ vanishing-ws: could not launch "test" \(spawn.*ENOENT\)/);
+    assert.match(output.stderr, /✗ vanishing-ws: could not launch "test" \(spawn.*ENOENT\)/);
 
     // the launch error aborts the whole run: nothing scheduled after it runs.
-    assert.match(stdout, /running present-ws/);
-    assert.match(stdout, /running vanishing-ws/);
-    assert.doesNotMatch(stdout, /running after-ws/);
-    assert.doesNotMatch(stdout, /workspace\(s\) failed/);
+    assert.match(output.stdout, /running present-ws/);
+    assert.match(output.stdout, /running vanishing-ws/);
+    assert.doesNotMatch(output.stdout, /running after-ws/);
+    assert.doesNotMatch(output.stdout, /workspace\(s\) failed/);
   });
 
   it("resolves a script's own node_modules/.bin, falling back to the root's for hoisted bins", async () => {
@@ -437,26 +431,27 @@ describe("sumlyzer run behavior", () => {
   });
 
   it("chains pretest/posttest around the main script, matching npm run's own short-circuit semantics", async () => {
-    const markerDir = await mkdtemp(path.join(tmpdir(), "sumlyzer-lifecycle-"));
-    const { stdout, code } = await runCli([], LIFECYCLE_HOOKS_FIXTURE, { LIFECYCLE_MARKER_DIR: markerDir });
+    await withTempDir("sumlyzer-lifecycle-", async (markerDir) => {
+      const { stdout, code } = await runCli([], LIFECYCLE_HOOKS_FIXTURE, { LIFECYCLE_MARKER_DIR: markerDir });
 
-    assert.equal(code, 1);
+      assert.equal(code, 1);
 
-    // hooks-pass-ws: pretest, test and posttest all actually ran.
-    await assert.doesNotReject(access(path.join(markerDir, "pretest")));
-    await assert.doesNotReject(access(path.join(markerDir, "test")));
-    await assert.doesNotReject(access(path.join(markerDir, "posttest")));
+      // hooks-pass-ws: pretest, test and posttest all actually ran.
+      await assert.doesNotReject(access(path.join(markerDir, "pretest")));
+      await assert.doesNotReject(access(path.join(markerDir, "test")));
+      await assert.doesNotReject(access(path.join(markerDir, "posttest")));
 
-    // pretest-fails-ws: a failing pretest blocks the main script entirely.
-    assert.match(stdout, /pretest-fails-ws-pretest-ran/);
-    assert.doesNotMatch(stdout, /pretest-fails-ws-test-should-not-run/);
-    assert.match(stdout, /✗ pretest-fails-ws failed/);
+      // pretest-fails-ws: a failing pretest blocks the main script entirely.
+      assert.match(stdout, /pretest-fails-ws-pretest-ran/);
+      assert.doesNotMatch(stdout, /pretest-fails-ws-test-should-not-run/);
+      assert.match(stdout, /✗ pretest-fails-ws failed/);
 
-    // posttest-fails-ws: the main script passed, but a failing posttest still
-    // fails the workspace overall.
-    assert.match(stdout, /posttest-fails-ws-test-ran/);
-    assert.match(stdout, /posttest-fails-ws-posttest-ran/);
-    assert.match(stdout, /✗ posttest-fails-ws failed/);
+      // posttest-fails-ws: the main script passed, but a failing posttest still
+      // fails the workspace overall.
+      assert.match(stdout, /posttest-fails-ws-test-ran/);
+      assert.match(stdout, /posttest-fails-ws-posttest-ran/);
+      assert.match(stdout, /✗ posttest-fails-ws failed/);
+    });
   });
 
   it("doesn't let a posttest that also runs node --test overwrite the main script's own counts", async () => {
@@ -470,18 +465,8 @@ describe("sumlyzer run behavior", () => {
   });
 
   it("kills the underlying test process on SIGINT instead of leaving it orphaned", async () => {
-    const child = spawn("node", [BIN], { cwd: INTERRUPT_FIXTURE });
-    let stdout = "";
-
-    await new Promise((resolve, reject) => {
-      child.stdout.on("data", (chunk) => {
-        stdout += chunk;
-        if (stdout.includes("running slow-ws")) {
-          resolve();
-        }
-      });
-      child.on("error", reject);
-    });
+    const { child, ready } = spawnAndWaitForOutput("node", [BIN], { cwd: INTERRUPT_FIXTURE }, "running slow-ws");
+    await ready;
 
     // "running slow-ws" is printed before the actual npm/node process chain is spawned,
     // so poll until the grandchild is genuinely alive instead of racing it.
@@ -532,10 +517,8 @@ describe("sumlyzer run behavior", () => {
   });
 
   it("--junit writes an aggregated JUnit report merging every workspace's testsuites", async () => {
-    const outDir = await mkdtemp(path.join(tmpdir(), "sumlyzer-junit-cli-"));
-    const outFile = path.join(outDir, "report.xml");
-
-    try {
+    await withTempDir("sumlyzer-junit-cli-", async (outDir) => {
+      const outFile = path.join(outDir, "report.xml");
       const { code } = await runCli(["--junit", outFile], JUNIT_FIXTURE);
 
       assert.equal(code, 1);
@@ -547,42 +530,29 @@ describe("sumlyzer run behavior", () => {
       assert.match(report, /<testsuite name="fail-ws">[\s\S]*<testcase name="breaks"/);
       assert.match(report, /<failure/);
       assertWellFormedXml(report);
-    }
-    finally {
-      await rm(outDir, { recursive: true, force: true });
-    }
+    });
   });
 
   it("--junit keeps nested describe() blocks as nested <testsuite> elements without unbalancing the merged XML", async () => {
-    const outDir = await mkdtemp(path.join(tmpdir(), "sumlyzer-junit-cli-"));
-    const outFile = path.join(outDir, "report.xml");
-
-    try {
+    await withTempDir("sumlyzer-junit-cli-", async (outDir) => {
+      const outFile = path.join(outDir, "report.xml");
       await runCli(["--junit", outFile], JUNIT_FIXTURE);
 
       const report = await readFile(outFile, "utf8");
       assert.match(report, /<testsuite name="nested-ws › outer suite"[^>]*>[\s\S]*<testsuite name="inner suite"[^>]*>/);
       assertWellFormedXml(report);
-    }
-    finally {
-      await rm(outDir, { recursive: true, force: true });
-    }
+    });
   });
 
   it("--junit writes to <dir>/junit.xml when <path> is an existing directory", async () => {
-    const outDir = await mkdtemp(path.join(tmpdir(), "sumlyzer-junit-cli-"));
-
-    try {
+    await withTempDir("sumlyzer-junit-cli-", async (outDir) => {
       const { code } = await runCli(["--junit", outDir], JUNIT_FIXTURE);
 
       assert.equal(code, 1);
 
       const report = await readFile(path.join(outDir, "junit.xml"), "utf8");
       assert.match(report, /<testsuite name="pass-ws">/);
-    }
-    finally {
-      await rm(outDir, { recursive: true, force: true });
-    }
+    });
   });
 
   it("prints a friendly message instead of a stack trace when the JUnit report can't be written", async () => {
@@ -636,8 +606,7 @@ describe("sumlyzer --changed behavior", () => {
   it("--ref diffs against an explicit ref instead of auto-detecting", async () => {
     const { dir, baseline } = await gitFixture();
     await writeFile(path.join(dir, "workspaces/app-b/NOTES.md"), "note\n");
-    await git(["add", "-A"], dir);
-    await git(["-c", "user.email=test@sumlyzer.dev", "-c", "user.name=sumlyzer tests", "commit", "-q", "-m", "touch app-b"], dir);
+    await commitAll(dir, "touch app-b");
 
     const { stdout, code } = await runCli(["--changed", "--ref", baseline], dir);
 
@@ -662,8 +631,7 @@ describe("sumlyzer --changed behavior", () => {
     await git(["branch", "origin/main"], dir);
     await git(["branch", "--set-upstream-to=origin/main"], dir);
     await writeFile(path.join(dir, "workspaces/app-b/NOTES.md"), "note\n");
-    await git(["add", "-A"], dir);
-    await git(["-c", "user.email=test@sumlyzer.dev", "-c", "user.name=sumlyzer tests", "commit", "-q", "-m", "touch app-b"], dir);
+    await commitAll(dir, "touch app-b");
 
     const { stdout, code } = await runCli(["--changed"], dir);
 
@@ -674,19 +642,15 @@ describe("sumlyzer --changed behavior", () => {
   });
 
   it("prints a friendly message instead of a stack trace when the cwd isn't a git repo", async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), "sumlyzer-changed-no-git-"));
-    await cp(CHANGED_FIXTURE, dir, { recursive: true });
+    await withTempDir("sumlyzer-changed-no-git-", async (dir) => {
+      await cp(CHANGED_FIXTURE, dir, { recursive: true });
 
-    try {
       const { stderr, code } = await runCli(["--changed"], dir);
 
       assert.equal(code, 1);
       assert.match(stderr, /could not compute changed files against "auto-detected"/);
       assert.doesNotMatch(stderr, /at async|node:internal/);
-    }
-    finally {
-      await rm(dir, { recursive: true, force: true });
-    }
+    });
   });
 
   it("rejects --ref without --changed", async () => {
