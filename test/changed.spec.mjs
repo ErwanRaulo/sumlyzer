@@ -1,78 +1,68 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile } from "node:fs/promises";
 import path from "node:path";
-import { promisify } from "node:util";
 
 import { getChangedFiles, resolveDefaultRef, selectChangedWorkspaces } from "../src/changed.mjs";
 import { GitDiffError } from "../src/errors.mjs";
-
-const execFileAsync = promisify(execFile);
+import { git, commitAll, withTempDir } from "./gitTestHelpers.mjs";
 
 const WORKSPACES = ["workspaces/app-a", "workspaces/app-b"];
 
-async function git(args, cwd) {
-  return execFileAsync("git", args, { cwd });
-}
+// Runs fn(dir, baseline) against a fresh repo with a single "baseline" commit,
+// cleaning the repo up afterward.
+async function withGitRepo(fn) {
+  return withTempDir("sumlyzer-changed-unit-", async (dir) => {
+    await git(["init", "-q"], dir);
+    await writeFile(path.join(dir, "file.txt"), "baseline\n");
+    await commitAll(dir, "baseline");
+    const { stdout: baseline } = await git(["rev-parse", "HEAD"], dir);
 
-async function tempGitRepo() {
-  const dir = await mkdtemp(path.join(tmpdir(), "sumlyzer-changed-unit-"));
-  await git(["init", "-q"], dir);
-  await writeFile(path.join(dir, "file.txt"), "baseline\n");
-  await git(["add", "-A"], dir);
-  await git(["-c", "user.email=test@sumlyzer.dev", "-c", "user.name=sumlyzer tests", "commit", "-q", "-m", "baseline"], dir);
-  const { stdout: baseline } = await git(["rev-parse", "HEAD"], dir);
-
-  return { dir, baseline: baseline.trim() };
+    return fn(dir, baseline.trim());
+  });
 }
 
 describe("getChangedFiles", () => {
   it("throws a GitDiffError when the cwd isn't a git repository", async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), "sumlyzer-changed-unit-"));
-
-    try {
+    await withTempDir("sumlyzer-changed-unit-", (dir) => {
       assert.throws(() => getChangedFiles(dir, "HEAD"), GitDiffError);
-    }
-    finally {
-      await rm(dir, { recursive: true, force: true });
-    }
+    });
   });
 });
 
 describe("resolveDefaultRef", () => {
   it("resolves to HEAD when the working tree has uncommitted changes", async () => {
-    const { dir } = await tempGitRepo();
-    await writeFile(path.join(dir, "file.txt"), "dirty\n");
+    await withGitRepo(async (dir) => {
+      await writeFile(path.join(dir, "file.txt"), "dirty\n");
 
-    const result = resolveDefaultRef(dir);
+      const result = resolveDefaultRef(dir);
 
-    assert.deepEqual(result, { ref: "HEAD", label: "HEAD", reason: "uncommitted changes" });
+      assert.deepEqual(result, { ref: "HEAD", label: "HEAD", reason: "uncommitted changes" });
+    });
   });
 
   it("resolves to HEAD when the tree is clean and no upstream is configured", async () => {
-    const { dir } = await tempGitRepo();
+    await withGitRepo(async (dir) => {
+      const result = resolveDefaultRef(dir);
 
-    const result = resolveDefaultRef(dir);
-
-    assert.deepEqual(result, { ref: "HEAD", label: "HEAD", reason: "no upstream configured" });
+      assert.deepEqual(result, { ref: "HEAD", label: "HEAD", reason: "no upstream configured" });
+    });
   });
 
   it("resolves to the merge-base with the upstream when the tree is clean", async () => {
-    const { dir, baseline } = await tempGitRepo();
-    // Stand in for a real remote-tracking branch: any ref name works for @{u} resolution.
-    await git(["branch", "origin/main"], dir);
-    await git(["branch", "--set-upstream-to=origin/main"], dir);
-    await writeFile(path.join(dir, "file.txt"), "ahead\n");
-    await git(["add", "-A"], dir);
-    await git(["-c", "user.email=test@sumlyzer.dev", "-c", "user.name=sumlyzer tests", "commit", "-q", "-m", "ahead of upstream"], dir);
+    await withGitRepo(async (dir, baseline) => {
+      // Stand in for a real remote-tracking branch: any ref name works for @{u} resolution.
+      await git(["branch", "origin/main"], dir);
+      await git(["branch", "--set-upstream-to=origin/main"], dir);
+      await writeFile(path.join(dir, "file.txt"), "ahead\n");
+      await commitAll(dir, "ahead of upstream");
 
-    const result = resolveDefaultRef(dir);
+      const result = resolveDefaultRef(dir);
 
-    assert.equal(result.ref, baseline);
-    assert.equal(result.reason, "no local changes");
-    assert.match(result.label, /origin\/main/);
+      assert.equal(result.ref, baseline);
+      assert.equal(result.reason, "no local changes");
+      assert.match(result.label, /origin\/main/);
+    });
   });
 });
 
