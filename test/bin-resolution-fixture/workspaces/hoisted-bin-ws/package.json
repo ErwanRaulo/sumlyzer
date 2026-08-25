@@ -1,0 +1,7 @@
+{
+  "name": "hoisted-bin-ws",
+  "private": true,
+  "scripts": {
+    "test": "shared-bin"
+  }
+}

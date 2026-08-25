@@ -1,0 +1,8 @@
+{
+  "name": "count-pollution-ws",
+  "private": true,
+  "scripts": {
+    "test": "node --test \"./test/*.spec.mjs\"",
+    "posttest": "node --test \"./posttest-check/*.spec.mjs\""
+  }
+}

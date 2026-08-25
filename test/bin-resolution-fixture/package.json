@@ -1,0 +1,8 @@
+{
+  "name": "bin-resolution-fixture",
+  "private": true,
+  "workspaces": [
+    "workspaces/hoisted-bin-ws",
+    "workspaces/local-bin-ws"
+  ]
+}
