@@ -2,24 +2,25 @@ import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { AstAnalyser } from "@nodesecure/js-x-ray";
 
-const targetDirs = ["bin", "src"];
 const scanner = new AstAnalyser();
 const findings = [];
 
-for (const dir of targetDirs) {
-  const files = readdirSync(dir, { recursive: true })
-    .filter((file) => file.endsWith(".mjs"))
-    .map((file) => join(dir, file));
+const mjsFiles = (file) => file.endsWith(".mjs")
 
-  for (const file of files) {
-    console.log(`Analyzing ${file}`);
-    const { warnings } = await scanner.analyseFile(file);
+const files =  ["bin", "src"].flatMap((dir) =>
+  readdirSync(dir, { recursive: true })
+    .filter(mjsFiles)
+    .map((file) => join(dir, file))
+);
 
-    for (const warning of warnings) {
-      console.log(`[${warning.severity}] ${file}: ${warning.kind}${warning.value ? ` (${warning.value})` : ""}`);
-      if (warning.severity !== "Information") {
-        findings.push({ file, ...warning });
-      }
+for (const file of files) {
+  console.log(`Analyzing ${file}`);
+  const { warnings } = await scanner.analyseFile(file);
+
+  for (const {warning} of warnings) {
+    console.log(`[${warning.severity}] ${file}: ${warning.kind}${warning.value ? ` (${warning.value})` : ""}`);
+    if (warning.severity !== "Information") {
+      findings.push({ file, ...warning });
     }
   }
 }
