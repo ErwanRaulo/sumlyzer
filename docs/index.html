@@ -882,7 +882,6 @@
       <a href="#ci">CI</a>
       <a href="#watch"><span class="nav-soon-dot" aria-hidden="true"></span> watch mode</a>
       <a href="#mcp"><span class="nav-soon-dot" aria-hidden="true"></span> MCP server</a>
-      <a href="https://github.com/ErwanRaulo/sumlyzer" target="_blank" rel="noopener">GitHub</a>
       <a href="https://www.npmjs.com/package/sumlyzer" target="_blank" rel="noopener">npm</a>
     </div>
   </div>
@@ -1087,8 +1086,8 @@
     <div class="wrap">
       <div class="grid2">
         <div>
-          <div class="kicker">Readable job page.</div>
-          <h2>Plugs into your CI</h2>
+          <div class="kicker">CI ready</div>
+          <h2>Turn long logs into a short CI job page</h2>
           <p><span class="flag">--junit &lt;path&gt;</span> merges every workspace's JUnit output into one aggregated report, each
           <code class="mono">&lt;testsuite&gt;</code> prefixed by workspace name. GitLab, Jenkins,
           Azure DevOps all read it the same way.</p>
@@ -1159,7 +1158,7 @@
               <span class="title">agent &rarr; sumlyzer (MCP)</span>
             </div>
             <div class="term-body">
-              <span class="stagger run" style="--i:0">tools/call run_fail_fast</span><br />
+              <span class="stagger run" style="--i:0">tools/call sumlyzer_run_tests</span><br />
               <span class="stagger ok" style="--i:1">&check; contact</span><br />
               <span class="stagger bad" style="--i:2">&cross; tree-walker failed (exit code 1)</span><br />
               <span class="stagger" style="--i:3">&nbsp;</span>
