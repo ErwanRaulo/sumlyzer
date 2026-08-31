@@ -75,7 +75,9 @@ Sumlyzer's `--ff` gets you there in the meantime.
 
 ## Roadmap
 
-**Watch mode** — walk the workspace dependency graph so a change in one workspace also re-runs the ones that depend on it.
+**Watch mode**: walk the workspace dependency graph so a change in one workspace also re-runs the ones that depend on it.
+
+**MCP server**: allow LLM agent to run the fail fast mode on any project organized with npm workspaces.
 
 ## Contributing
 
