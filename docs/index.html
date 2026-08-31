@@ -1,0 +1,1263 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="dark" />
+<title>sumlyzer, fail-fast test runner for npm workspaces</title>
+<meta name="description" content="Run every npm workspace's node:test script, see only the failures, and get an aggregated pass/fail summary. Concurrency (~3.5x faster), --changed, JUnit reports, and GitHub Actions log folding built in." />
+<link rel="canonical" href="https://erwanraulo.github.io/sumlyzer/" />
+<meta name="robots" content="index, follow" />
+
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="sumlyzer" />
+<meta property="og:title" content="sumlyzer, fail-fast test runner for npm workspaces" />
+<meta property="og:description" content="npm run test --workspaces --if-present runs everything and tells you nothing. sumlyzer aggregates, fails fast, runs concurrently, and only re-tests what changed." />
+<meta property="og:url" content="https://erwanraulo.github.io/sumlyzer/" />
+<meta property="og:image" content="https://erwanraulo.github.io/sumlyzer/assets/example.png" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="sumlyzer, fail-fast test runner for npm workspaces" />
+<meta name="twitter:description" content="Aggregated summaries, fail-fast, concurrency, --changed, and JUnit reports for npm workspaces running node:test." />
+<meta name="twitter:image" content="https://erwanraulo.github.io/sumlyzer/assets/example.png" />
+
+<link rel="icon" href="assets/logo.png" type="image/png" />
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "sumlyzer",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "Node.js >= 22",
+  "description": "Run every npm workspace's node:test script, see only the failures, and get an aggregated pass/fail summary. Concurrency, --changed, JUnit reports, and GitHub Actions log folding built in.",
+  "url": "https://erwanraulo.github.io/sumlyzer/",
+  "downloadUrl": "https://www.npmjs.com/package/sumlyzer",
+  "codeRepository": "https://github.com/ErwanRaulo/sumlyzer",
+  "license": "https://github.com/ErwanRaulo/sumlyzer/blob/main/LICENSE",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+}
+</script>
+
+<style>
+  :root {
+    /* Always dark: this page has no light-mode variant by design. */
+    --bg: #0d1117;
+    --panel: #11161c;
+    --panel-2: #161b22;
+    --ink: #e6edf3;
+    --ink-soft: #9da7b3;
+    --muted: #6e7681;
+    --rule: #21262d;
+
+    --pass: #3fb950;
+    --fail: #f85149;
+    --num: #e3b341;
+    --info: #58a6ff;
+
+    --brand-a: #4fa3e3;
+    --brand-b: #45cbb0;
+    --brand-grad: linear-gradient(120deg, var(--brand-a), var(--brand-b));
+    --brand-ink: #06120f;
+
+    --code-bg: #0d1117;
+    --code-panel: #11161c;
+    --code-ink: #e6edf3;
+    --code-muted: #8b949e;
+    --code-rule: #21262d;
+
+    --glass-bg: rgba(255, 255, 255, 0.055);
+    --glass-border: rgba(255, 255, 255, 0.12);
+    --glass-shadow: 0 20px 60px -20px rgba(0, 0, 0, 0.6);
+    --blob-a: rgba(79, 163, 227, 0.25);
+    --blob-b: rgba(69, 203, 176, 0.22);
+  }
+
+  * { box-sizing: border-box; min-width: 0; }
+  img { max-width: 100%; }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    width: 100%;
+  }
+
+  .mono {
+    font-family: "SF Mono", "JetBrains Mono", ui-monospace, "Cascadia Code", Menlo, Consolas, monospace;
+  }
+
+  a { color: inherit; }
+
+  .wrap {
+    max-width: 940px;
+    margin: 0 auto;
+    padding: 0 20px;
+    position: relative;
+  }
+
+  /* ---------- ambient background ---------- */
+
+  .blobs {
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: -1;
+  }
+  .blob {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(70px);
+  }
+  .blob.a { top: -12vw; left: -8vw; width: 46vw; height: 46vw; background: radial-gradient(circle, var(--blob-a), transparent 70%); }
+  .blob.b { top: 20vh; right: -14vw; width: 40vw; height: 40vw; background: radial-gradient(circle, var(--blob-b), transparent 70%); }
+  .blob.c { bottom: -10vw; left: 30vw; width: 34vw; height: 34vw; background: radial-gradient(circle, var(--blob-a), transparent 72%); }
+  @media (prefers-reduced-motion: no-preference) {
+    .blob.a { animation: drift-a 22s ease-in-out infinite alternate; }
+    .blob.b { animation: drift-b 26s ease-in-out infinite alternate; }
+    .blob.c { animation: drift-a 30s ease-in-out infinite alternate; }
+  }
+  @keyframes drift-a { to { transform: translate(3vw, 4vh); } }
+  @keyframes drift-b { to { transform: translate(-4vw, -3vh); } }
+
+  /* ---------- glass ---------- */
+
+  .glass {
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow);
+    backdrop-filter: blur(18px) saturate(140%);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
+  }
+
+  /* ---------- reveal ---------- */
+
+  .reveal .stagger { opacity: 0; transform: translateY(6px); }
+  @media (prefers-reduced-motion: no-preference) {
+    .reveal.play .stagger { animation: rise 320ms ease-out forwards; animation-delay: calc(var(--i, 0) * var(--stagger, 70ms)); }
+  }
+  @media (prefers-reduced-motion: reduce) { .reveal .stagger { opacity: 1; transform: none; } }
+  @keyframes rise { to { opacity: 1; transform: none; } }
+
+  .reveal { opacity: 0; transform: translateY(14px); }
+  .reveal.play { opacity: 1; transform: none; }
+  @media (prefers-reduced-motion: no-preference) {
+    .reveal { transition: opacity 480ms ease-out, transform 480ms ease-out; }
+  }
+  @media (prefers-reduced-motion: reduce) { .reveal { opacity: 1; transform: none; } }
+
+  /* ---------- nav ---------- */
+
+  nav.top {
+    position: static;
+    z-index: 20;
+    border-bottom: 1px solid transparent;
+    transition: border-color 240ms ease;
+  }
+  nav.top.scrolled {
+    position: sticky;
+    top: 0;
+    border-bottom-color: var(--glass-border);
+  }
+  nav.top .wrap {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-weight: 700;
+    font-size: 0.95rem;
+    text-decoration: none;
+  }
+  .brand-mark {
+    display: inline-flex;
+    opacity: 0;
+    transform: translateY(-6px);
+    transition: opacity 240ms ease, transform 240ms ease;
+  }
+  nav.top.scrolled .brand-mark {
+    opacity: 1;
+    transform: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .brand-mark { transition: opacity 1ms; }
+  }
+  nav.top .links {
+    display: flex;
+    gap: 18px;
+    font-family: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+    font-size: 0.8rem;
+  }
+  nav.top .links a {
+    text-decoration: none;
+    color: var(--ink-soft);
+    border-bottom: 1px solid transparent;
+  }
+  nav.top .links a:hover { color: var(--brand-b); border-color: var(--brand-b); }
+  nav.top .links a:focus-visible { outline: 2px solid var(--brand-b); outline-offset: 3px; }
+
+  .version {
+    font-size: 0.7rem;
+    color: var(--muted);
+    font-weight: 500;
+    padding: 2px 7px;
+    border: 1px solid var(--rule);
+    border-radius: 999px;
+  }
+
+  /* ---------- Z mark (real logo, animated glow + masked shine) ---------- */
+
+  .zmark-wrap {
+    position: relative;
+    display: inline-block;
+    flex-shrink: 0;
+    transition: transform 220ms ease;
+  }
+  .zmark-wrap:hover { transform: translateY(-2px); }
+
+  .zmark-glow {
+    position: absolute;
+    inset: -35%;
+    z-index: -1;
+    background: radial-gradient(circle, var(--blob-a), transparent 68%);
+    filter: blur(18px);
+    opacity: 0.4;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .zmark-glow { animation: glow-pulse 4s ease-in-out infinite; }
+  }
+  @keyframes glow-pulse {
+    0%, 100% { opacity: 0.22; transform: scale(0.94); }
+    50% { opacity: 0.45; transform: scale(1.04); }
+  }
+
+  img.zmark {
+    display: block;
+    filter: drop-shadow(0 8px 18px rgba(15, 60, 90, 0.3));
+    transform-origin: 50% 55%;
+  }
+  .zmark.sm { width: 22px; height: auto; }
+  .zmark.lg { width: clamp(56px, 9vw, 92px); height: auto; }
+  .zmark.xl { width: clamp(160px, 24vw, 320px); height: auto; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    img.zmark.xl { animation: mark-live 7s cubic-bezier(.37, .04, .35, 1) infinite; }
+  }
+  @keyframes mark-live {
+    0%, 100% { transform: translateY(0) scale(1) skew(0deg, 0deg); filter: drop-shadow(0 8px 18px rgba(15, 60, 90, 0.3)); }
+    22%      { transform: translateY(-9px) scale(1.045) skew(-4deg, 2deg); filter: drop-shadow(0 16px 26px rgba(15, 60, 90, 0.22)); }
+    50%      { transform: translateY(3px) scale(1.07) skew(0deg, 0deg); filter: drop-shadow(0 6px 14px rgba(15, 60, 90, 0.34)); }
+    78%      { transform: translateY(-5px) scale(1.03) skew(4deg, -2deg); filter: drop-shadow(0 14px 22px rgba(15, 60, 90, 0.24)); }
+  }
+
+  .zmark-shine {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(100deg, transparent 34%, rgba(255, 255, 255, 0.85) 50%, transparent 66%);
+    background-size: 250% 250%;
+    background-position: -60% -60%;
+    -webkit-mask-image: url("assets/logo.png");
+    mask-image: url("assets/logo.png");
+    -webkit-mask-size: contain;
+    mask-size: contain;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    mix-blend-mode: overlay;
+    pointer-events: none;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .zmark-shine { animation: shine-sweep 5.5s ease-in-out infinite; }
+  }
+  @media (prefers-reduced-motion: reduce) { .zmark-shine { display: none; } }
+  @keyframes shine-sweep {
+    0%, 15% { background-position: -60% -60%; }
+    55%, 100% { background-position: 160% 160%; }
+  }
+
+  /* ---------- hero ---------- */
+
+  header.hero {
+    padding: clamp(48px, 8vw, 88px) 0 clamp(36px, 6vw, 64px);
+  }
+
+  .hero-top {
+    display: flex;
+    align-items: center;
+    gap: clamp(24px, 6vw, 64px);
+    margin-bottom: 36px;
+  }
+  .hero-copy { flex: 1 1 auto; min-width: 0; }
+  .hero-mark {
+    flex: 0 0 auto;
+    display: flex;
+    justify-content: center;
+  }
+  @media (max-width: 780px) {
+    .hero-top { flex-direction: column; }
+    .hero-mark { order: -1; margin-bottom: 4px; }
+  }
+
+  .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--brand-b);
+    padding: 6px 12px;
+    border-radius: 999px;
+    margin-bottom: 20px;
+  }
+  .eyebrow::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--brand-b); }
+
+  h1 {
+    margin: 0 0 18px;
+    font-family: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+    font-weight: 700;
+    font-size: clamp(1.9rem, 5.4vw, 3rem);
+    line-height: 1.12;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+    max-width: 17ch;
+  }
+  h1 .grad {
+    background: var(--brand-grad);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .lede {
+    margin: 0 0 26px;
+    font-size: 1.08rem;
+    line-height: 1.6;
+    color: var(--ink-soft);
+    max-width: 60ch;
+  }
+  .lede code {
+    font-family: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+    background: var(--panel-2);
+    padding: 0.12em 0.4em;
+    font-size: 0.88em;
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+  }
+
+  .stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 50px;
+  }
+  .stat-chip {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 10px 16px;
+    border-radius: 12px;
+    text-decoration: none;
+    transition: transform 160ms ease, border-color 160ms ease;
+  }
+  .stat-chip .num {
+    font-family: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+    font-weight: 800;
+    font-size: 1.15rem;
+    background: var(--brand-grad);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .stat-chip .lbl { font-size: 0.78rem; color: var(--ink-soft); }
+  .stat-chip .num .star-ico {
+    color: #f2b400;
+    -webkit-text-fill-color: #f2b400;
+    text-shadow: 0 1px 6px rgba(242, 180, 0, 0.35);
+  }
+  a.stat-chip.live {
+    display: none;
+    opacity: 0;
+  }
+  a.stat-chip.live.ready {
+    display: flex;
+    opacity: 1;
+  }
+  a.stat-chip.live:hover { transform: translateY(-1px); border-color: var(--brand-b); }
+  a.stat-chip.live:focus-visible { outline: 2px solid var(--brand-b); outline-offset: 2px; }
+
+  .hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 26px;
+  }
+
+  .install-line {
+    background: var(--code-bg);
+    color: var(--code-ink);
+    font-family: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+    font-size: 0.88rem;
+    padding: 12px 14px 12px 18px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    border-radius: 10px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: border-color 160ms ease;
+  }
+  .install-line:hover { border-color: var(--brand-b); }
+  .install-line:focus-visible { outline: 2px solid var(--brand-b); outline-offset: 2px; }
+  .install-line .cmd { flex: 1; text-align: left; }
+  .install-line .copy-ico {
+    color: var(--code-muted);
+    font-size: 0.95rem;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+  .install-line.copied .copy-ico { color: var(--pass); }
+  .install-line .copy-label { display: none; font-size: 0.72rem; color: var(--pass); white-space: nowrap; }
+  .install-line.copied .copy-ico { display: none; }
+  .install-line.copied .copy-label { display: inline; }
+  .install-line .p { color: var(--code-muted); }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 20px;
+    font-family: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+    font-size: 0.85rem;
+    text-decoration: none;
+    border: 1px solid var(--rule);
+    color: var(--ink);
+    border-radius: 10px;
+    transition: transform 160ms ease, border-color 160ms ease, color 160ms ease;
+  }
+  .btn:hover { border-color: var(--brand-b); color: var(--brand-b); transform: translateY(-1px); }
+  .btn:focus-visible { outline: 2px solid var(--brand-b); outline-offset: 2px; }
+  .btn.primary {
+    background: var(--brand-grad);
+    color: var(--brand-ink);
+    border: none;
+    font-weight: 700;
+  }
+  .btn.primary:hover { color: var(--brand-ink); filter: brightness(1.08); }
+
+  /* ---------- terminal (CSS/HTML recreation) ---------- */
+
+  .term-frame {
+    border-radius: 16px;
+    overflow: hidden;
+    background: var(--code-bg);
+  }
+  .term-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 11px 16px;
+    border-bottom: 1px solid var(--code-rule);
+  }
+  .term-bar .dot { width: 10px; height: 10px; border-radius: 50%; }
+  .term-bar .dot:nth-child(1) { background: #f78166; }
+  .term-bar .dot:nth-child(2) { background: #e3b341; }
+  .term-bar .dot:nth-child(3) { background: #3fb950; }
+  .term-bar .title {
+    margin-left: 10px;
+    font-family: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+    font-size: 0.75rem;
+    color: var(--code-muted);
+  }
+  .term-body {
+    padding: 18px 20px 20px;
+    font-family: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+    font-size: 0.82rem;
+    line-height: 1.85;
+    color: var(--code-ink);
+  }
+  .term-body .run { color: var(--code-muted); }
+  .term-body .ok { color: var(--pass); }
+  .term-body .bad { color: var(--fail); }
+  .term-body .cursor {
+    display: inline-block;
+    width: 0.5em;
+    height: 0.9em;
+    background: var(--brand-b);
+    vertical-align: -0.15em;
+    margin-left: 2px;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .term-body .cursor { animation: blink 1s steps(1) infinite; }
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .mini-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+    font-size: 0.76rem;
+    margin-top: 10px;
+  }
+  .mini-table th, .mini-table td {
+    text-align: left;
+    padding: 5px 10px 5px 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .mini-table th { color: var(--code-muted); font-weight: 500; border-bottom: 1px solid var(--code-rule); }
+  .mini-table td.status.pass { color: var(--pass); }
+  .mini-table td.status.fail { color: var(--fail); }
+  .mini-table .more { color: var(--code-muted); }
+
+  /* ---------- sections ---------- */
+
+  main { display: flex; flex-direction: column; }
+
+  section.feature {
+    padding: clamp(48px, 8vw, 84px) 0;
+  }
+  .feature .grid2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: clamp(28px, 5vw, 56px);
+    align-items: center;
+  }
+  .feature.reverse .grid2 { direction: rtl; }
+  .feature.reverse .grid2 > * { direction: ltr; }
+  @media (max-width: 760px) {
+    .feature .grid2 { grid-template-columns: 1fr; direction: ltr !important; }
+  }
+
+  .feature .kicker {
+    font-family: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+  .feature h2 {
+    margin: 0 0 12px;
+    font-size: clamp(1.4rem, 3vw, 1.85rem);
+    font-weight: 700;
+    text-wrap: balance;
+  }
+  .feature p {
+    margin: 0 0 10px;
+    color: var(--ink-soft);
+    line-height: 1.6;
+    font-size: 0.98rem;
+  }
+  .feature .flag {
+    font-family: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+    font-size: 0.82rem;
+    color: var(--brand-b);
+  }
+  .feature .stat {
+    font-family: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+    font-weight: 700;
+    font-size: 1rem;
+    color: var(--ink);
+  }
+
+  .illus {
+    padding: clamp(18px, 3vw, 26px);
+    border-radius: 18px;
+    transition: transform 220ms ease, box-shadow 220ms ease;
+  }
+  .illus:hover { transform: translateY(-3px); }
+
+  /* --- full summary table --- */
+
+  table.fulltable {
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: collapse;
+    font-family: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+    font-size: 0.74rem;
+  }
+  table.fulltable th, table.fulltable td {
+    text-align: left;
+    padding: 7px 6px;
+    font-variant-numeric: tabular-nums;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  table.fulltable th:first-child, table.fulltable td:first-child { padding-left: 0; }
+  table.fulltable th {
+    font-size: 0.62rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    border-bottom: 1px solid var(--rule);
+    font-weight: 600;
+  }
+  table.fulltable td { border-bottom: 1px solid var(--rule); }
+  table.fulltable tr:last-child td { border-bottom: none; }
+  table.fulltable td.status.pass { color: var(--pass); font-weight: 600; }
+  table.fulltable td.status.fail { color: var(--fail); font-weight: 600; }
+  .table-note {
+    margin: 12px 0 0;
+    font-family: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+    font-size: 0.76rem;
+    color: var(--info);
+  }
+  .table-note.fail { color: var(--fail); }
+  .fulltable-wrap { overflow-x: auto; }
+  table.fulltable td.more { color: var(--muted); font-style: italic; }
+
+  /* --- fail-fast demo --- */
+
+  .ffdemo { display: flex; flex-direction: column; }
+  .ffrow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 4px;
+    font-family: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+    font-size: 0.84rem;
+    border-bottom: 1px solid var(--rule);
+  }
+  .ffrow:first-child { padding-top: 2px; }
+  .ffrow .ffstate { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .ffrow.ok .ffstate { color: var(--pass); }
+  .ffrow.bad { color: var(--ink); }
+  .ffrow.bad .ffstate { color: var(--fail); }
+  .ffrow.skip { opacity: 0.42; border-bottom-style: dashed; }
+  .ffrow.skip .ffstate { color: var(--muted); }
+  .ffrow.more .ffname { font-style: italic; }
+  .ffstop {
+    margin: 6px 0;
+    padding: 7px 4px;
+    font-family: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--brand-b);
+    border-top: 1px dashed var(--brand-b);
+    border-bottom: 1px dashed var(--brand-b);
+  }
+
+  /* --- concurrency bars --- */
+
+  .bars { display: flex; flex-direction: column; gap: 16px; }
+  .bar-row { display: grid; grid-template-columns: 130px 1fr 56px; align-items: center; gap: 12px; }
+  @media (max-width: 420px) {
+    .bar-row { grid-template-columns: 1fr; gap: 4px; }
+    .bar-row .time { text-align: left; }
+  }
+  .bar-row .label { font-family: "SF Mono", "JetBrains Mono", ui-monospace, monospace; font-size: 0.78rem; color: var(--ink-soft); }
+  .bar-row .track { background: var(--panel-2); height: 22px; position: relative; overflow: hidden; border-radius: 6px; }
+  .bar-row .fill {
+    display: block;
+    height: 100%;
+    width: 0;
+    background: var(--muted);
+    border-radius: 6px;
+  }
+  .bar-row.win .fill { background: var(--brand-grad); box-shadow: 0 0 16px -2px var(--brand-b); }
+  .reveal.play .bar-row .fill { animation: grow 900ms cubic-bezier(.2,.7,.2,1) forwards; animation-delay: calc(var(--i) * 160ms); }
+  @media (prefers-reduced-motion: reduce) { .bar-row .fill { width: var(--w) !important; animation: none !important; } }
+  @keyframes grow { to { width: var(--w); } }
+  .bar-row .time { font-family: "SF Mono", "JetBrains Mono", ui-monospace, monospace; font-size: 0.82rem; text-align: right; font-variant-numeric: tabular-nums; }
+  .bar-row.win .time { color: var(--brand-b); font-weight: 700; }
+
+  /* --- changed grid --- */
+
+  .wsgrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .tile {
+    aspect-ratio: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    font-family: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+    background: var(--panel-2);
+    color: var(--muted);
+    border-radius: 10px;
+  }
+  .tile.active { background: var(--panel); color: var(--brand-b); box-shadow: inset 0 0 0 1px var(--brand-b), 0 0 18px -6px var(--brand-b); }
+  .tile .name { font-size: 0.66rem; }
+  .tile .state { font-size: 0.56rem; letter-spacing: 0.08em; opacity: 0.8; }
+  .tile.active .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--brand-grad); }
+  @media (prefers-reduced-motion: no-preference) {
+    .tile.active .dot { animation: pulse 1.6s ease-in-out infinite; }
+  }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+  .wsgrid-caption {
+    margin: 22px 0 0;
+    font-family: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+  .wsgrid-caption strong { color: var(--brand-b); }
+
+  /* --- junit merge --- */
+
+  .merge { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .merge .sources { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  .pill {
+    font-family: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+    font-size: 0.72rem;
+    padding: 5px 10px;
+    background: var(--panel-2);
+    color: var(--ink-soft);
+    border: 1px solid var(--rule);
+    border-radius: 999px;
+  }
+  .pill.roadmap { border-style: dashed; color: var(--muted); background: transparent; }
+  .merge .down { font-size: 1.1rem; color: var(--muted); margin: 4px 0; }
+  .merge .out {
+    font-family: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+    font-size: 0.85rem;
+    padding: 9px 16px;
+    background: var(--code-bg);
+    color: var(--brand-b);
+    border: 1px solid var(--brand-b);
+    font-weight: 700;
+    border-radius: 8px;
+  }
+
+  /* --- gha fold --- */
+
+  .fold {
+    background: var(--code-bg);
+    font-family: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+    font-size: 0.8rem;
+    color: var(--code-ink);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .fold .row { padding: 9px 14px; border-bottom: 1px solid var(--code-rule); display: flex; align-items: center; gap: 8px; }
+  .fold .row:last-child { border-bottom: none; }
+  .fold .chev { color: var(--code-muted); width: 1em; }
+  .fold .row.open .chev { color: var(--brand-b); }
+  .fold .ok { color: var(--pass); }
+  .fold .indent { padding: 14px 24px; color: var(--code-muted); font-size: 0.76rem; }
+
+  /* --- watch mode dependency graph --- */
+
+  .graph {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 10px 0;
+  }
+  .gnode {
+    padding: 11px 16px;
+    border: 1px dashed var(--rule);
+    border-radius: 10px;
+    font-family: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .reveal.play .gnode { animation: nodepulse 2.6s ease-in-out infinite; animation-delay: calc(var(--i) * 0.5s); }
+  }
+  @keyframes nodepulse {
+    0%, 100% { color: var(--muted); border-color: var(--rule); box-shadow: none; }
+    35% { color: var(--brand-b); border-color: var(--brand-b); box-shadow: 0 0 16px -4px var(--brand-b); }
+  }
+  .garrow { color: var(--muted); font-family: "SF Mono", "JetBrains Mono", ui-monospace, monospace; }
+
+  /* ---------- flags table ---------- */
+
+  section.flags { padding: clamp(44px, 8vw, 72px) 0; }
+  section.flags h2 { font-size: 1.3rem; margin: 0 0 20px; }
+  table.flagtable {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.86rem;
+  }
+  table.flagtable th, table.flagtable td {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--rule);
+  }
+  table.flagtable th {
+    font-family: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  table.flagtable td.flag { font-family: "SF Mono", "JetBrains Mono", ui-monospace, monospace; color: var(--brand-b); white-space: nowrap; }
+  .flags-wrap { overflow-x: auto; }
+
+  /* ---------- final CTA ---------- */
+
+  section.cta-band { padding: clamp(50px, 9vw, 90px) 0; text-align: center; }
+  .cta-card { padding: clamp(32px, 6vw, 56px) clamp(20px, 6vw, 48px); border-radius: 22px; }
+  .cta-card h2 { margin: 0 0 12px; font-size: clamp(1.5rem, 3.6vw, 2.1rem); text-wrap: balance; }
+  .cta-card p { margin: 0 0 26px; color: var(--ink-soft); font-size: 1rem; }
+  .cta-card .hero-actions { justify-content: center; margin-bottom: 0; }
+
+  /* ---------- footer ---------- */
+
+  footer { padding: 32px 0 44px; }
+  footer .wrap {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 14px;
+    font-family: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+  footer a { text-decoration: none; border-bottom: 1px solid var(--rule); }
+  footer a:hover { color: var(--brand-b); border-color: var(--brand-b); }
+  footer a:focus-visible { outline: 2px solid var(--brand-b); outline-offset: 2px; }
+  footer .links { display: flex; gap: 16px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+
+<div class="blobs" aria-hidden="true">
+  <div class="blob a"></div>
+  <div class="blob b"></div>
+  <div class="blob c"></div>
+</div>
+
+<nav class="top glass">
+  <div class="wrap">
+    <a class="brand" href="#top">
+      <span class="brand-mark">
+        <span class="zmark-wrap">
+          <span class="zmark-glow" aria-hidden="true"></span>
+          <img class="zmark sm" src="assets/logo.png" alt="" aria-hidden="true" />
+          <span class="zmark-shine" aria-hidden="true"></span>
+        </span>
+      </span>
+      <span class="mono">sumlyzer</span>
+      <span class="mono version">v1.3.1</span>
+    </a>
+    <div class="links">
+      <a href="#fail-fast">fail-fast</a>
+      <a href="#summary">summary</a>
+      <a href="#changed">--changed</a>
+      <a href="#ci">CI</a>
+      <a href="#watch">watch mode</a>
+      <a href="https://github.com/ErwanRaulo/sumlyzer" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://www.npmjs.com/package/sumlyzer" target="_blank" rel="noopener">npm</a>
+    </div>
+  </div>
+</nav>
+
+<div id="top"></div>
+
+<header class="hero" id="hero">
+  <div class="wrap">
+    <div class="hero-top">
+      <div class="hero-copy">
+        <div class="eyebrow glass">Lightweight Node.js CLI</div>
+        <h1>Test your workspaces <br />Faster & <span class="grad">Better</span>.</h1>
+        <p class="lede">
+          <code>npm run test --workspaces --if-present</code> runs every workspace but gives no
+          aggregated summary, no fail-fast, and lets an early failure scroll off screen unnoticed.
+          sumlyzer fixes that and runs workspaces concurrently while it's at it.
+        </p>
+         <a class="btn primary" href="https://github.com/ErwanRaulo/sumlyzer" target="_blank" rel="noopener">View on GitHub &rarr;</a>
+      </div>
+
+      <div class="hero-mark">
+        <span class="zmark-wrap">
+          <span class="zmark-glow" aria-hidden="true"></span>
+          <img class="zmark xl" src="assets/logo.png" alt="sumlyzer" width="437" height="510" />
+          <span class="zmark-shine" aria-hidden="true"></span>
+        </span>
+      </div>
+    </div>
+
+
+
+    <div class="stats" id="stats">
+      <div class="stat-chip glass"><span class="num">3.5x</span><span class="lbl">faster than <i>npm run</i></span></div>
+      <div class="stat-chip glass"><span class="num">&darr;</span><span class="lbl">reduce infra cost</span></div>
+      <div class="stat-chip glass"><span class="num">0</span><span class="lbl">config required</span></div>
+      <a class="stat-chip glass live" id="starsChip" href="https://github.com/ErwanRaulo/sumlyzer/stargazers" target="_blank" rel="noopener"><span class="num"><span class="star-ico">&#9733;</span></span><span class="lbl">on GitHub</span></a>
+      <a class="stat-chip glass live" id="downloadsChip" href="https://www.npmjs.com/package/sumlyzer" target="_blank" rel="noopener"><span class="num">&mdash;</span><span class="lbl">npm downloads/week</span></a>
+    </div>
+
+    <div class="hero-actions">
+      <button type="button" class="install-line copy-btn" data-copy="npm install --save-dev sumlyzer">
+        <span class="cmd"><span class="p">$</span> npm install --save-dev sumlyzer</span>
+        <span class="copy-ico" aria-hidden="true">&#10697;</span>
+        <span class="copy-label">Copied!</span>
+      </button>
+     
+    </div>
+
+    <div class="term-frame glass reveal play">
+      <div class="term-bar">
+        <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+        <span class="title">npx sumlyzer</span>
+      </div>
+      <div class="term-body">
+        <span class="stagger run" style="--i:0">running contact</span><br />
+        <span class="stagger ok" style="--i:1">&check; contact</span><br />
+        <span class="stagger run" style="--i:2">running tree-walker</span><br />
+        <span class="stagger bad" style="--i:3">&cross; tree-walker failed (exit code 1)</span><br />
+        <span class="stagger run" style="--i:4">running conformance …</span><br />
+        <span class="stagger" style="--i:5">&nbsp;</span>
+        <table class="mini-table stagger" style="--i:6">
+          <thead><tr><th>workspace</th><th>status</th><th>duration</th></tr></thead>
+          <tbody>
+            <tr><td>contact</td><td class="status pass">PASS</td><td>20.5s</td></tr>
+            <tr><td>tree-walker</td><td class="status fail">FAIL</td><td>2.7s</td></tr>
+            <tr><td>conformance</td><td class="status pass">PASS</td><td>1.1s</td></tr>
+            <tr><td colspan="3" class="more">+ 10 more workspaces<span class="cursor"></span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <section class="feature" id="fail-fast">
+    <div class="wrap">
+      <div class="grid2">
+        <div>
+          <div class="kicker">Fail-fast &middot; aggregated summary</div>
+          <h2>Stop the moment something breaks</h2>
+          <p>Add <span class="flag">--ff</span> and sumlyzer stops scheduling new workspaces the
+          moment one fails. The behavior <a href="https://github.com/npm/rfcs/issues/575" target="_blank" rel="noopener">requested from npm itself</a>, years before it ever landed.</p>
+        </div>
+        <div class="illus glass reveal">
+          <div class="ffdemo">
+            <div class="ffrow ok stagger" style="--i:0"><span class="ffname">contact</span><span class="ffstate">PASS</span></div>
+            <div class="ffrow ok stagger" style="--i:1"><span class="ffname">scanner</span><span class="ffstate">PASS</span></div>
+            <div class="ffrow bad stagger" style="--i:2"><span class="ffname">tree-walker</span><span class="ffstate">FAIL</span></div>
+            <div class="ffstop stagger" style="--i:3">--ff stops scheduling here</div>
+            <div class="ffrow skip stagger" style="--i:4"><span class="ffname">conformance</span><span class="ffstate">&mdash;</span></div>
+            <div class="ffrow skip stagger" style="--i:5"><span class="ffname">i18n</span><span class="ffstate">&mdash;</span></div>
+            <div class="ffrow skip stagger" style="--i:6"><span class="ffname">rc</span><span class="ffstate">&mdash;</span></div>
+            <div class="ffrow skip more stagger" style="--i:7"><span class="ffname">+ 9 more never scheduled</span><span class="ffstate"></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="feature reverse" id="summary">
+    <div class="wrap">
+      <div class="grid2">
+        <div>
+          <div class="illus glass reveal">
+            <div class="fulltable-wrap">
+              <table class="fulltable">
+                <thead>
+                  <tr><th>workspace</th><th>status</th><th>duration</th><th>tests</th><th>pass</th><th>fail</th></tr>
+                </thead>
+                <tbody>
+                  <tr class="stagger" style="--i:0"><td>contact</td><td class="status pass">PASS</td><td>20.5s</td><td>35</td><td>35</td><td>0</td></tr>
+                  <tr class="stagger" style="--i:1"><td>scanner</td><td class="status pass">PASS</td><td>10.1s</td><td>162</td><td>161</td><td>0</td></tr>
+                  <tr class="stagger" style="--i:2"><td>tree-walker</td><td class="status fail">FAIL</td><td>2.7s</td><td>26</td><td>25</td><td>1</td></tr>
+                  <tr class="stagger" style="--i:3"><td>conformance</td><td class="status pass">PASS</td><td>1.1s</td><td>35</td><td>35</td><td>0</td></tr>
+                  <tr class="stagger" style="--i:4"><td>github</td><td class="status pass">PASS</td><td>4.7s</td><td>8</td><td>8</td><td>0</td></tr>
+                  <tr class="stagger" style="--i:5"><td>gitlab</td><td class="status pass">PASS</td><td>2.6s</td><td>8</td><td>8</td><td>0</td></tr>
+                  <tr class="stagger" style="--i:6"><td colspan="6" class="more">+ 7 more workspaces</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="table-note stagger" style="--i:7">i skipped tests: scanner (1)</p>
+            <p class="table-note fail stagger" style="--i:8">1/13 workspace(s) failed: tree-walker</p>
+          </div>
+        </div>
+        <div>
+          <div class="kicker">Aggregated summary</div>
+          <h2>Everything still lands in one table</h2>
+          <p>Every workspace's stats are collected into a single table at the end.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="feature" id="concurrency">
+    <div class="wrap">
+      <div class="grid2">
+        <div>
+          <div class="illus glass reveal">
+            <div class="bars">
+              <div class="bar-row" style="--i:0; --w:100%">
+                <span class="label">npm --workspaces</span>
+                <span class="track"><span class="fill"></span></span>
+                <span class="time">22s</span>
+              </div>
+              <div class="bar-row" style="--i:1; --w:95%">
+                <span class="label">sumlyzer</span>
+                <span class="track"><span class="fill"></span></span>
+                <span class="time">21s</span>
+              </div>
+              <div class="bar-row win" style="--i:2; --w:27%">
+                <span class="label">--concurrency 8</span>
+                <span class="track"><span class="fill"></span></span>
+                <span class="time">6s</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="kicker">don't wait your turn</div>
+          <h2>Workspaces parallèle execution</h2>
+          <p><span class="flag">-c, --concurrency &lt;n&gt;</span> runs up to <code class="mono">n</code>
+          workspaces' scripts at the same time, something <code class="mono">npm</code> doesn't do natively.</p>
+          <p>Measured on a real 15-workspace monorepo: <span class="stat">~3.5x faster</span> at
+          concurrency 8, output interleaved as each workspace finishes.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="feature" id="changed">
+    <div class="wrap">
+      <div class="grid2">
+        <div>
+          <div class="kicker">Optimized</div>
+          <h2>You touch it, you rerun it, that's it</h2><br>
+
+          <p><span class="flag">--changed</span> run workspace that owns every file in your <i class="mono">git diff</i></p>
+          <p>The git ref auto-detects: uncommitted changes diff against <code class="mono">HEAD</code>,
+          a clean branch diffs against its upstream merge-base.</p>
+          <p>In your CI, pass <span class="flag">--ref</span> for a custom target branch.</p>
+        </div>
+        <div class="illus glass reveal">
+          <div class="wsgrid">
+            <div class="tile stagger" style="--i:0"><span class="name">api</span><span class="state">skip</span></div>
+            <div class="tile stagger" style="--i:1"><span class="name">web</span><span class="state">skip</span></div>
+            <div class="tile active stagger" style="--i:2"><span class="dot"></span><span class="name">cli</span><span class="state">run</span></div>
+            <div class="tile active stagger" style="--i:3"><span class="dot"></span><span class="name">core</span><span class="state">run</span></div>
+            <div class="tile stagger" style="--i:4"><span class="name">db</span><span class="state">skip</span></div>
+            <div class="tile stagger" style="--i:5"><span class="name">auth</span><span class="state">skip</span></div>
+            <div class="tile stagger" style="--i:6"><span class="name">ui</span><span class="state">skip</span></div>
+            <div class="tile stagger" style="--i:7"><span class="name">docs</span><span class="state">skip</span></div>
+            <div class="tile active stagger" style="--i:8"><span class="dot"></span><span class="name">hooks</span><span class="state">run</span></div>
+            <div class="tile stagger" style="--i:9"><span class="name">infra</span><span class="state">skip</span></div>
+            <div class="tile stagger" style="--i:10"><span class="name">jobs</span><span class="state">skip</span></div>
+            <div class="tile stagger" style="--i:11"><span class="name">shared</span><span class="state">skip</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="feature reverse" id="ci">
+    <div class="wrap">
+      <div class="grid2">
+        <div>
+          <div class="illus glass reveal">
+            <div class="merge">
+              <div class="sources">
+                <span class="pill stagger" style="--i:0">contact</span>
+                <span class="pill stagger" style="--i:1">scanner</span>
+                <span class="pill stagger" style="--i:2">tree-walker</span>
+              </div>
+              <span class="down">&darr;</span>
+              <span class="out stagger" style="--i:3">junit.xml</span>
+            </div>
+          </div>
+          <div class="illus glass reveal" style="margin-top: 14px;">
+            <div class="fold">
+              <div class="row open"><span class="chev">&#9662;</span> running tree-walker <span class="ok" style="margin-left:auto">&check;</span></div>
+              <div class="row"><span class="chev">&#9656;</span> running conformance <span class="ok" style="margin-left:auto">&check;</span></div>
+              <div class="indent">&#10003; Dependency.addChildren must increment dependencyCount one by one (0.3ms)</div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="kicker">long logs, short job page.</div>
+          <h2>Plugs into your CI</h2>
+          <p><span class="flag">--junit &lt;path&gt;</span> merges every workspace's JUnit output into one aggregated report, each
+          <code class="mono">&lt;testsuite&gt;</code> prefixed by workspace name. GitLab, Jenkins,
+          Azure DevOps all read it the same way.</p>
+          <p>On GitHub Actions, group each workspace's output in a collapsible element.</p>
+          <p>Exit code is <code class="mono">1</code> on any failure, <code class="mono">0</code>
+          otherwise. No output parsing required.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="feature" id="watch">
+    <div class="wrap">
+      <div class="grid2">
+        <div>
+          <span class="pill roadmap">roadmap &middot; in development</span>
+          <h2 style="margin-top:12px;">Next: follow the dependency graph too</h2>
+          <p>Today, <span class="flag">--changed</span> only runs the workspaces your diff touches
+          directly. Watch mode will walk the workspace dependency graph (topological sort) so a
+          change in <code class="mono">core</code> also re-runs everything that depends on it.</p>
+          <p>No release date yet, tracked on the <a href="https://github.com/ErwanRaulo/sumlyzer#readme" target="_blank" rel="noopener">README roadmap</a>.</p>
+        </div>
+        <div class="illus glass reveal">
+          <div class="graph">
+            <div class="gnode" style="--i:0">core</div>
+            <span class="garrow">&rarr;</span>
+            <div class="gnode" style="--i:1">api</div>
+            <span class="garrow">&rarr;</span>
+            <div class="gnode" style="--i:2">web</div>
+          </div>
+          <p class="wsgrid-caption" style="text-align:center;">A change in <strong>core</strong> ripples to everything downstream</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="flags">
+    <div class="wrap">
+      <h2>All flags</h2>
+      <div class="flags-wrap glass" style="border-radius: 14px; padding: 6px 18px;">
+        <table class="flagtable">
+          <thead>
+            <tr><th>Flag</th><th>Default</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="flag">--script &lt;name&gt;</td><td>test</td><td>npm script to run per workspace</td></tr>
+            <tr><td class="flag">--ff</td><td>off</td><td>fail fast: stop at the first failing workspace</td></tr>
+            <tr><td class="flag">--junit &lt;path&gt;</td><td>off</td><td>write an aggregated JUnit XML report to &lt;path&gt;</td></tr>
+            <tr><td class="flag">-c, --concurrency &lt;n&gt;</td><td>1</td><td>run up to &lt;n&gt; workspaces at once</td></tr>
+            <tr><td class="flag">--changed</td><td>off</td><td>only run workspaces with changed files</td></tr>
+            <tr><td class="flag">--ref &lt;ref&gt;</td><td>auto-detect</td><td>git ref to diff against for --changed</td></tr>
+            <tr><td class="flag">-h, --help</td><td></td><td>print usage</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="cta-band">
+    <div class="wrap">
+      <div class="cta-card glass reveal">
+        <h2>Stop paying full price for a one-line fix.</h2>
+        <p>Drop sumlyzer into any npm workspaces project in under a minute.</p>
+        <div class="hero-actions">
+          <button type="button" class="install-line copy-btn" data-copy="npm install --save-dev sumlyzer">
+        <span class="cmd"><span class="p">$</span> npm install --save-dev sumlyzer</span>
+        <span class="copy-ico" aria-hidden="true">&#10697;</span>
+        <span class="copy-label">Copied!</span>
+      </button>
+          <a class="btn primary" href="https://github.com/ErwanRaulo/sumlyzer" target="_blank" rel="noopener">View on GitHub &rarr;</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>MIT licensed &middot; requires Node.js &ge;22 &middot; npm workspaces + node:test only</span>
+    <div class="links">
+      <a href="https://github.com/ErwanRaulo/sumlyzer#readme" target="_blank" rel="noopener">Full README</a>
+      <a href="https://github.com/ErwanRaulo/sumlyzer/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener">Contributing</a>
+      <a href="https://www.npmjs.com/package/sumlyzer" target="_blank" rel="noopener">npm</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+  if ('IntersectionObserver' in window) {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('play');
+          io.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.25 });
+    document.querySelectorAll('.reveal').forEach(function (el) { io.observe(el); });
+  } else {
+    document.querySelectorAll('.reveal').forEach(function (el) { el.classList.add('play'); });
+  }
+
+  var statsEl = document.getElementById('stats');
+  var navEl = document.querySelector('nav.top');
+  if (statsEl && navEl && 'IntersectionObserver' in window) {
+    var navIo = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        navEl.classList.toggle('scrolled', !entry.isIntersecting);
+      });
+    }, { rootMargin: '-72px 0px 0px 0px', threshold: 0 }); // -72px ~= nav.top height
+    navIo.observe(statsEl);
+  } else if (navEl) {
+    navEl.classList.add('scrolled');
+  }
+
+  var COPY_FEEDBACK_MS = 1600; // how long the "Copied!" state stays up
+
+  document.querySelectorAll('.copy-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var text = btn.getAttribute('data-copy');
+      var markCopied = function () {
+        btn.classList.add('copied');
+        clearTimeout(btn._copyTimer);
+        btn._copyTimer = setTimeout(function () { btn.classList.remove('copied'); }, COPY_FEEDBACK_MS);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(markCopied).catch(function () {});
+      } else {
+        var tempInput = document.createElement('textarea');
+        tempInput.value = text;
+        tempInput.style.position = 'fixed';
+        tempInput.style.opacity = '0';
+        document.body.appendChild(tempInput);
+        tempInput.select();
+        try { document.execCommand('copy'); markCopied(); } catch (e) {}
+        document.body.removeChild(tempInput);
+      }
+    });
+  });
+
+
+  (function loadSocialProof() {
+    function fmt(n) {
+      if (n >= 1000) return (n / 1000).toFixed(n >= 10000 ? 0 : 1).replace(/\.0$/, '') + 'k';
+      return String(n);
+    }
+
+    function populateChip(chip, url, readValue, render) {
+      if (!chip) return;
+      fetch(url)
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (payload) {
+          var value = payload && readValue(payload);
+          if (typeof value !== 'number') return;
+          chip.querySelector('.num').innerHTML = render(fmt(value));
+          chip.classList.add('ready');
+        })
+        .catch(function () {});
+    }
+
+    populateChip(
+      document.getElementById('starsChip'),
+      'https://api.github.com/repos/ErwanRaulo/sumlyzer',
+      function (repo) { return repo.stargazers_count; },
+      function (count) { return '<span class="star-ico">&#9733;</span> ' + count; }
+    );
+
+    populateChip(
+      document.getElementById('downloadsChip'),
+      'https://api.npmjs.org/downloads/point/last-week/sumlyzer',
+      function (dl) { return dl.downloads; },
+      function (count) { return count; }
+    );
+  })();
+</script>
+
+</body>
+</html>
