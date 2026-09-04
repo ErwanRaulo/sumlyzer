@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node ../../bin/sumlyzer.mjs --ff)",
+      "Bash(nvm --version)",
+      "Bash(command -v claude)",
+      "Read(//opt/homebrew/bin/**)"
+    ]
+  }
+}

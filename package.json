@@ -4,7 +4,8 @@
   "description": "Run every npm workspace's test script, only show output for the ones that fail, and finish with an aggregated pass/fail summary.",
   "type": "module",
   "bin": {
-    "sumlyzer": "bin/sumlyzer.mjs"
+    "sumlyzer": "bin/sumlyzer.mjs",
+    "sumlyzer-mcp-server": "bin/sumlyzer-mcp-server.mjs"
   },
   "files": [
     "bin",
@@ -58,6 +59,8 @@
     "fast-xml-parser": "^5.10.1"
   },
   "dependencies": {
-    "glob": "^13.0.6"
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "glob": "^13.0.6",
+    "zod": "^4.5.4"
   }
 }

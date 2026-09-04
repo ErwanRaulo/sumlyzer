@@ -1,6 +1,7 @@
 node_modules/
 coverage/
 *.log
+.mcp.json
 
 # Fixture .bin shims that exercise buildWorkspacePath's own node_modules/.bin
 # resolution: real files, not an actual npm install, so they're worth tracking.

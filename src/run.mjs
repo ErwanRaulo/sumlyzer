@@ -16,6 +16,12 @@ import { getChangedFiles, resolveDefaultRef, selectChangedWorkspaces } from "./c
 
 const runner = { hasOwnReporter, prepareEnv, parseResult };
 
+function log(quiet, message) {
+  if (!quiet) {
+    console.log(message);
+  }
+}
+
 // Rethink this synchronous approach in case of very large package.json files, or huge amount of workspaces,
 // but for now it's simpler than async and should be fine in practice.
 function readJson(file) {
@@ -119,7 +125,7 @@ function buildWorkspacePath(root, wsPath) {
     dir = parent;
   }
 
-  return [...binDirs, process.env.PATH].join(path.delimiter);
+  return [...binDirs, path.dirname(process.execPath), process.env.PATH].join(path.delimiter);
 }
 
 // The spawned shell is the actual test runner's parent, so killing just it
@@ -283,7 +289,7 @@ function partitionResults(results, workspacesToRun) {
   return { completed, skipped };
 }
 
-async function runWorkspaces({ root, workspacesToRun, scriptName, scriptCommands, ff, junitDir, concurrency }) {
+async function runWorkspaces({ root, workspacesToRun, scriptName, scriptCommands, ff, junitDir, concurrency, quiet }) {
   const results = new Array(workspacesToRun.length);
   const ciGroup = githubGroupSyntax(process.env);
   const activeChildren = new Set();
@@ -296,7 +302,9 @@ async function runWorkspaces({ root, workspacesToRun, scriptName, scriptCommands
       const index = nextIndex++;
       const wsPath = workspacesToRun[index];
       const name = workspaceName(wsPath);
-      process.stdout.write(dim(`running ${name}\n`));
+      if (!quiet) {
+        process.stdout.write(dim(`running ${name}\n`));
+      }
 
       const junitDestPath = junitDir ? path.join(junitDir, `${index}.xml`) : undefined;
 
@@ -310,7 +318,9 @@ async function runWorkspaces({ root, workspacesToRun, scriptName, scriptCommands
         throw new WorkspaceLaunchError(wsPath, scriptName, error);
       }
       results[index] = result;
-      printWorkspaceResult(name, result, ciGroup);
+      if (!quiet) {
+        printWorkspaceResult(name, result, ciGroup);
+      }
 
       if (result.exitCode !== 0 && ff) {
         stopScheduling = true;
@@ -326,24 +336,24 @@ async function runWorkspaces({ root, workspacesToRun, scriptName, scriptCommands
 
 // Resolves which ref to diff against: the explicit --ref, or an auto-detected
 // one (logged so the choice is never silent).
-function resolveRefToUse(root, explicitRef) {
+function resolveRefToUse(root, explicitRef, quiet) {
   if (explicitRef) {
     return { ref: explicitRef, label: explicitRef };
   }
 
   const resolved = resolveDefaultRef(root);
-  console.log(dim(`--changed: no --ref given, comparing against "${resolved.label}" (${resolved.reason})`));
+  log(quiet, dim(`--changed: no --ref given, comparing against "${resolved.label}" (${resolved.reason})`));
   return resolved;
 }
 
 // Returns the filtered workspace list to run, or null when nothing should run
 // (already reported to the user), so main() can return early.
-function applyChangedFilter(root, resolvedWorkspaces, workspacesToRun, explicitRef) {
-  const { ref, label } = resolveRefToUse(root, explicitRef);
+function applyChangedFilter(root, resolvedWorkspaces, workspacesToRun, explicitRef, quiet) {
+  const { ref, label } = resolveRefToUse(root, explicitRef, quiet);
 
   const changedFiles = getChangedFiles(root, ref);
   if (changedFiles.length === 0) {
-    console.log(dim(`No changes detected against "${label}".`));
+    log(quiet, dim(`No changes detected against "${label}".`));
     return null;
   }
 
@@ -351,14 +361,14 @@ function applyChangedFilter(root, resolvedWorkspaces, workspacesToRun, explicitR
 
   if (rootChangeFiles.length > 0) {
     const suffix = rootChangeFiles.length > 1 ? ` (+${rootChangeFiles.length - 1} more)` : "";
-    console.log(dim(`--changed: "${rootChangeFiles[0]}"${suffix} is outside every workspace, ignoring`));
+    log(quiet, dim(`--changed: "${rootChangeFiles[0]}"${suffix} is outside every workspace, ignoring`));
   }
 
   const filtered = workspacesToRun.filter((wsPath) => changedWorkspaces.has(wsPath));
-  console.log(dim(`--changed: running ${filtered.length}/${workspacesToRun.length} workspace(s) with changes since "${label}"`));
+  log(quiet, dim(`--changed: running ${filtered.length}/${workspacesToRun.length} workspace(s) with changes since "${label}"`));
 
   if (filtered.length === 0) {
-    console.log(dim("No eligible workspace changed."));
+    log(quiet, dim("No eligible workspace changed."));
     return null;
   }
 
@@ -391,12 +401,12 @@ async function writeJunitReport(root, junitPath, results) {
   }
 }
 
-async function runOnce({ root, workspacesToRun, scriptName, scriptCommands, ff, junitPath, concurrency }) {
+async function runOnce({ root, workspacesToRun, scriptName, scriptCommands, ff, junitPath, concurrency, quiet }) {
   const junitDir = junitPath ? await mkdtemp(path.join(tmpdir(), "sumlyzer-junit-")) : null;
 
   let completed, skipped;
   try {
-    ({ completed, skipped } = await runWorkspaces({ root, workspacesToRun, scriptName, scriptCommands, ff, junitDir, concurrency }));
+    ({ completed, skipped } = await runWorkspaces({ root, workspacesToRun, scriptName, scriptCommands, ff, junitDir, concurrency, quiet }));
 
     if (junitDir) {
       await writeJunitReport(root, junitPath, completed);
@@ -408,8 +418,12 @@ async function runOnce({ root, workspacesToRun, scriptName, scriptCommands, ff, 
     }
   }
 
-  printSummary(completed, skipped);
-  reportOutcome(completed);
+  if (!quiet) {
+    printSummary(completed, skipped);
+    reportOutcome(completed);
+  }
+
+  return { completed, skipped };
 }
 
 // A workspace's own test run can write files inside itself (e.g. coverage, though that's
@@ -466,7 +480,7 @@ function runWatchMode({ root, workspaces, workspacesToRun, scriptName, scriptCom
   });
 }
 
-export async function main({ root, scriptName, ff, junitPath, concurrency = 1, changed = false, ref, watch = false }) {
+export async function main({ root, scriptName, ff, junitPath, concurrency = 1, changed = false, ref, watch = false, quiet = false }) {
 
   const { workspaces } = readJson(path.join(root, "package.json"));
 
@@ -483,30 +497,32 @@ export async function main({ root, scriptName, ff, junitPath, concurrency = 1, c
   }
 
   for (const wsPath of ownReporterConflicts) {
-    console.log(dim(`⊘ ${workspaceName(wsPath)}: skipped, own --test-reporter detected in its "${scriptName}" script`));
+    log(quiet, dim(`⊘ ${workspaceName(wsPath)}: skipped, own --test-reporter detected in its "${scriptName}" script`));
   }
 
   if (workspacesToRun.length === 0) {
-    console.log(dim(ownReporterConflicts.length > 0
+    log(quiet, dim(ownReporterConflicts.length > 0
       ? `All workspaces with a "${scriptName}" script were skipped (own --test-reporter detected).`
       : `No workspace has a "${scriptName}" script.`));
-    return;
+    return { completed: [], skipped: [] };
   }
 
   let finalWorkspacesToRun = workspacesToRun;
   if (changed) {
-    finalWorkspacesToRun = applyChangedFilter(root, resolvedWorkspaces, workspacesToRun, ref);
+    finalWorkspacesToRun = applyChangedFilter(root, resolvedWorkspaces, workspacesToRun, ref, quiet);
     if (finalWorkspacesToRun === null) {
       if (junitPath) {
-        console.log(dim(`--junit: no report written to "${junitPath}" (no workspace ran)`));
+        log(quiet, dim(`--junit: no report written to "${junitPath}" (no workspace ran)`));
       }
-      return;
+      return { completed: [], skipped: [] };
     }
   }
 
-  await runOnce({ root, workspacesToRun: finalWorkspacesToRun, scriptName, scriptCommands, ff, junitPath, concurrency });
+  const result = await runOnce({ root, workspacesToRun: finalWorkspacesToRun, scriptName, scriptCommands, ff, junitPath, concurrency, quiet });
 
   if (watch) {
     await runWatchMode({ root, workspaces: resolvedWorkspaces, workspacesToRun: finalWorkspacesToRun, scriptName, scriptCommands, ff, concurrency });
   }
+
+  return result;
 }

@@ -60,6 +60,41 @@ Exit code is `1` if any workspace fails, `0` otherwise — safe to drop straight
 | `sumlyzer` (sequential) | ~21s |
 | `sumlyzer --concurrency 8` | **~6s** |
 
+## MCP server
+
+`sumlyzer-mcp-server` exposes the fail-fast run as an [MCP](https://modelcontextprotocol.io) tool, so an agent working in your monorepo gets a structured pass/fail result back, enough to drive a tight fix-and-rerun loop.
+
+Register it with an MCP client, e.g. with Claude Code:
+
+```bash
+claude mcp add sumlyzer-mcp-server -- npx sumlyzer-mcp-server
+```
+
+It exposes one tool, `sumlyzer_fail_fast_tests`, which runs each workspace's script and stops at the first failure:
+
+| Input | Type | Default |
+| --- | --- | --- |
+| `root` | string | server's cwd |
+| `script` | string | `"test"` |
+| `changed` | boolean | `false` |
+| `ref` | string | auto-detected |
+| `concurrency` | number | `1` |
+
+```json
+{
+  "passed": 2,
+  "failed": 1,
+  "skipped": 1,
+  "skippedWorkspaces": ["pass-b"],
+  "firstFailure": {
+    "workspace": "fail-ws",
+    "exitCode": 1,
+    "failingTests": ["some assertion"],
+    "failureDetails": "..."
+  }
+}
+```
+
 ## Reference
 
 - **JUnit** (`--junit <path>`): merges every workspace's `node:test` JUnit output into one file, each `<testsuite>` prefixed with its workspace name. A workspace whose script never produces one is left out, with a warning naming it.
