@@ -17,9 +17,9 @@
     "node": ">=22.0.0"
   },
   "scripts": {
-    "test": "node --test \"./test/*.spec.mjs\"",
+    "test": "node --test --test-timeout=60000 \"./test/*.spec.mjs\"",
     "pretest:coverage": "mkdir -p coverage",
-    "test:coverage": "node --no-warnings --experimental-test-coverage --test-coverage-lines=95 --test-coverage-functions=95 --test-coverage-branches=85 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage/lcov.info --test \"./test/*.spec.mjs\"",
+    "test:coverage": "node --no-warnings --experimental-test-coverage --test-coverage-lines=95 --test-coverage-functions=95 --test-coverage-branches=85 --test-timeout=60000 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage/lcov.info --test \"./test/*.spec.mjs\"",
     "security-scan": "node scripts/security-scan.mjs",
     "postversion": "git push && git push --tags",
     "prepublishOnly": "npm test",
