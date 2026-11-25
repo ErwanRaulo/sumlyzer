@@ -6,13 +6,14 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-11-25
+
 ### Security
 
 - `--ref` can no longer be parsed by `git diff` as an option or a pathspec.
   A value such as `--ref=--output=<file>` used to make git create or
   overwrite `<file>`, and a ref matching a file name was silently treated as
-  a path.
-
+  a path ([#46](https://github.com/ErwanRaulo/sumlyzer/pull/46)).
 - Bump `glob` to `^14.0.6` (runtime) and dev dependencies to clear the
   `glob`, `minimatch`, `brace-expansion` and `fast-xml-parser` advisories
   reported by `npm audit` ([#43](https://github.com/ErwanRaulo/sumlyzer/pull/43)).
@@ -99,7 +100,8 @@ No release notes, see the [diff](https://github.com/ErwanRaulo/sumlyzer/compare/
 Earlier versions (`0.1.1` to `0.5.3`) have no release notes, see the
 [tags](https://github.com/ErwanRaulo/sumlyzer/tags).
 
-[Unreleased]: https://github.com/ErwanRaulo/sumlyzer/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/ErwanRaulo/sumlyzer/compare/v1.4.1...HEAD
+[1.4.1]: https://github.com/ErwanRaulo/sumlyzer/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/ErwanRaulo/sumlyzer/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/ErwanRaulo/sumlyzer/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/ErwanRaulo/sumlyzer/compare/v1.2.0...v1.3.0
