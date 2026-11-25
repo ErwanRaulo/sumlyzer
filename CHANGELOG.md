@@ -6,6 +6,13 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Workspace scripts (and their `pre`/`post` hooks) now get the same
+  `npm_package_*` and `npm_lifecycle_*` variables as with `npm run`.
+  Previously none were set, or the root package's leaked through when
+  sumlyzer itself was launched from an npm script.
+
 ## [1.4.1] - 2026-11-25
 
 ### Security

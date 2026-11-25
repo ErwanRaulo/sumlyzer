@@ -1,0 +1,16 @@
+{
+  "name": "env-ws",
+  "version": "2.3.4",
+  "private": true,
+  "config": {
+    "port": 8080
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "pretest": "node ../../dump-npm-env.mjs",
+    "test": "node ../../dump-npm-env.mjs",
+    "posttest": "node ../../dump-npm-env.mjs"
+  }
+}

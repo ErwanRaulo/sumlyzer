@@ -13,6 +13,7 @@ import { red, dim, workspaceName, githubGroupSyntax, printWorkspaceResult, print
 import { NoWorkspacesError, InvalidPackageJsonError, RootPackageJsonError, WorkspaceLaunchError } from "./errors.mjs";
 import { hasOwnReporter, prepareEnv, parseResult } from "./runners/nodeTest.mjs";
 import { getChangedFiles, resolveDefaultRef, selectChangedWorkspaces } from "./changed.mjs";
+import { npmScriptEnv } from "./npmScriptEnv.mjs";
 
 const runner = { hasOwnReporter, prepareEnv, parseResult };
 
@@ -78,7 +79,7 @@ function classifyWorkspace(root, wsPath, scriptName) {
   const post = pkg.scripts?.[`post${scriptName}`];
 
   const hasConflict = [pre, script, post].some((command) => command && runner.hasOwnReporter(command));
-  return hasConflict ? { kind: "ownReporterConflict" } : { kind: "eligible", pre, script, post };
+  return hasConflict ? { kind: "ownReporterConflict" } : { kind: "eligible", pkg, pre, script, post };
 }
 
 function listEligibleWorkspaces(root, workspaces, scriptName) {
@@ -98,7 +99,13 @@ function listEligibleWorkspaces(root, workspaces, scriptName) {
         break;
       case "eligible":
         eligible.push(wsPath);
-        scriptCommands.set(wsPath, { pre: classification.pre, script: classification.script, post: classification.post });
+        scriptCommands.set(wsPath, {
+          scriptName,
+          pkg: classification.pkg,
+          pre: classification.pre,
+          script: classification.script,
+          post: classification.post
+        });
         break;
     }
   }
@@ -168,24 +175,32 @@ async function runPhase(command, options, activeChildren) {
 // NODE_OPTIONS. pre/post run with a plain environment: forcing our JSON reporter onto
 // them too would let a hook that happens to run its own `node --test` silently overwrite
 // the main script's parsed counts/JUnit report with its own, whichever phase runs last.
-function buildPhaseOptions({ root, wsPath, junitDestPath }) {
+function buildPhaseOptions({ root, wsPath, junitDestPath, scriptPhases }) {
   const cwd = path.join(root, wsPath);
   const PATH = buildWorkspacePath(root, wsPath);
   const shellOptions = { cwd, shell: true, detached: process.platform !== "win32" };
+  const { scriptName, pkg } = scriptPhases;
+
+  const phaseEnv = (baseEnv, event, command) => ({
+    ...baseEnv,
+    ...npmScriptEnv({ pkg, pkgDir: cwd, event, script: command }),
+    PATH
+  });
 
   return {
-    hook: { ...shellOptions, env: { ...process.env, PATH } },
-    script: { ...shellOptions, env: { ...runner.prepareEnv(process.env, junitDestPath), PATH } }
+    pre: { ...shellOptions, env: phaseEnv(process.env, `pre${scriptName}`, scriptPhases.pre) },
+    script: { ...shellOptions, env: phaseEnv(runner.prepareEnv(process.env, junitDestPath), scriptName, scriptPhases.script) },
+    post: { ...shellOptions, env: phaseEnv(process.env, `post${scriptName}`, scriptPhases.post) }
   };
 }
 
 async function captureWorkspaceOutput({ root, wsPath, scriptPhases, junitDestPath, activeChildren }) {
-  const phaseOptions = buildPhaseOptions({ root, wsPath, junitDestPath });
+  const phaseOptions = buildPhaseOptions({ root, wsPath, junitDestPath, scriptPhases });
 
   const phases = [
-    scriptPhases.pre && { command: scriptPhases.pre, options: phaseOptions.hook },
+    scriptPhases.pre && { command: scriptPhases.pre, options: phaseOptions.pre },
     { command: scriptPhases.script, options: phaseOptions.script },
-    scriptPhases.post && { command: scriptPhases.post, options: phaseOptions.hook }
+    scriptPhases.post && { command: scriptPhases.post, options: phaseOptions.post }
   ].filter(Boolean);
 
   const stdoutChunks = [];
