@@ -7,6 +7,15 @@ export class NoWorkspacesError extends Error {
   }
 }
 
+export class RootPackageJsonError extends Error {
+  constructor(root, cause) {
+    super(cause.code === "ENOENT"
+      ? `No package.json found in ${root}. Run sumlyzer from the root of an npm workspaces project.`
+      : `could not read the root package.json (${cause.message})`, { cause });
+    this.name = "RootPackageJsonError";
+  }
+}
+
 export class InvalidPackageJsonError extends Error {
   constructor(entries) {
     super(entries.map(({ wsPath, message }) => `${workspaceName(wsPath)}: could not read its package.json (${message})`).join("\n"));

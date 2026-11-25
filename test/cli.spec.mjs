@@ -122,6 +122,7 @@ describe("sumlyzer CLI behaviors", () => {
     assert.match(stdout, /--changed\b/);
     assert.match(stdout, /--ref <ref>/);
     assert.match(stdout, /-w, --watch/);
+    assert.match(stdout, /-v, --version/);
     assert.match(stdout, /-h, --help/);
   });
 
@@ -169,6 +170,43 @@ describe("sumlyzer CLI behaviors", () => {
         return true;
       }
     );
+  });
+
+  it("--version prints the package version and exits 0", async () => {
+    const { version } = JSON.parse(await readFile(path.join(ROOT, "package.json"), "utf8"));
+    const { stdout } = await execFileAsync("node", [BIN, "--version"], { cwd: PROJECT_WITH_WORKSPACES });
+
+    assert.equal(stdout, `${version}\n`);
+  });
+
+  it("-v is the same as --version", async () => {
+    const [full, short] = await Promise.all([
+      execFileAsync("node", [BIN, "--version"], { cwd: PROJECT_WITH_WORKSPACES }),
+      execFileAsync("node", [BIN, "-v"], { cwd: PROJECT_WITH_WORKSPACES })
+    ]);
+
+    assert.equal(short.stdout, full.stdout);
+  });
+
+  it("prints a friendly message instead of a stack trace when there is no package.json", async () => {
+    await withTempDir("sumlyzer-no-package-json-", async (dir) => {
+      const { stdout, stderr, code } = await runCli([], dir);
+
+      assert.equal(code, 1);
+      assert.match(stderr, /No package\.json found in .+\. Run sumlyzer from the root of an npm workspaces project\./);
+      assert.doesNotMatch(stdout + stderr, /ENOENT|at readJson|node:internal/);
+    });
+  });
+
+  it("prints a friendly message instead of a stack trace when the root package.json is invalid", async () => {
+    await withTempDir("sumlyzer-invalid-root-", async (dir) => {
+      await writeFile(path.join(dir, "package.json"), "{ not json");
+      const { stdout, stderr, code } = await runCli([], dir);
+
+      assert.equal(code, 1);
+      assert.match(stderr, /could not read the root package\.json \(/);
+      assert.doesNotMatch(stdout + stderr, /SyntaxError: .*\n\s+at |node:internal/);
+    });
   });
 
   it("prints a friendly message if project does not have any workspaces", async () => {

@@ -16,7 +16,7 @@ Please **do not** open a public issue for a security vulnerability.
 Use GitHub's [private vulnerability reporting](https://github.com/ErwanRaulo/sumlyzer/security/advisories/new)
 for this repository instead. Include:
 
-- The version of `sumlyzer` you're using (`npm ls sumlyzer`)
+- The version of `sumlyzer` you're using (`npx sumlyzer --version`)
 - The command / options that trigger the issue
 - Your Node.js version and OS
 - Steps to reproduce, or a minimal workspace layout that shows the problem

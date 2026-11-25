@@ -1,10 +1,11 @@
 #!/usr/bin/env node
+import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import path from "node:path";
 import { availableParallelism } from "node:os";
 
 import { main } from "../src/run.mjs";
-import { NoWorkspacesError, InvalidPackageJsonError, WorkspaceLaunchError, GitDiffError } from "../src/errors.mjs";
+import { NoWorkspacesError, InvalidPackageJsonError, RootPackageJsonError, WorkspaceLaunchError, GitDiffError } from "../src/errors.mjs";
 import { red } from "../src/reporter.mjs";
 
 function printWorkspaceError(message) {
@@ -22,7 +23,8 @@ try {
       changed: { type: "boolean", default: false },
       ref: { type: "string" },
       watch: { type: "boolean", short: "w", default: false },
-      help: { type: "boolean", short: "h", default: false }
+      help: { type: "boolean", short: "h", default: false },
+      version: { type: "boolean", short: "v", default: false }
     }
   }));
 }
@@ -31,6 +33,12 @@ catch (error) {
     console.info(`${error.message}. Run "sumlyzer --help" for usage.`);
   }
   process.exit(1);
+}
+
+if (args.version) {
+  const { version } = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+  console.log(version);
+  process.exit(0);
 }
 
 let concurrency = Number.parseInt(args.concurrency, 10);
@@ -72,6 +80,7 @@ Options:
   -w, --watch           re-run on file change, only for changed workspaces
                          and the ones that depend on them (can't be combined
                          with --junit)
+  -v, --version         print the sumlyzer version
   -h, --help            show this help
 `);
   process.exit(0);
@@ -93,7 +102,7 @@ catch (error) {
   if (error instanceof NoWorkspacesError) {
     console.info(error.message);
   }
-  else if (error instanceof InvalidPackageJsonError || error instanceof WorkspaceLaunchError || error instanceof GitDiffError) {
+  else if (error instanceof RootPackageJsonError || error instanceof InvalidPackageJsonError || error instanceof WorkspaceLaunchError || error instanceof GitDiffError) {
     printWorkspaceError(error.message);
   }
   else {
