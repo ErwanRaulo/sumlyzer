@@ -140,13 +140,15 @@ describe("sumlyzer CLI behaviors", () => {
   });
 
   it("-c is the same as --concurrency", async () => {
+    // Stays within availableParallelism() so the value isn't clamped on small machines.
+    const concurrency = Math.min(2, availableParallelism());
     const [long, short] = await Promise.all([
-      execFileAsync("node", [BIN, "--help", "--concurrency", "4"], { cwd: PROJECT_WITH_WORKSPACES }),
-      execFileAsync("node", [BIN, "--help", "-c", "4"], { cwd: PROJECT_WITH_WORKSPACES })
+      execFileAsync("node", [BIN, "--help", "--concurrency", String(concurrency)], { cwd: PROJECT_WITH_WORKSPACES }),
+      execFileAsync("node", [BIN, "--help", "-c", String(concurrency)], { cwd: PROJECT_WITH_WORKSPACES })
     ]);
 
     assert.equal(short.stdout, long.stdout);
-    assert.match(long.stdout, /4 at a time/);
+    assert.match(long.stdout, concurrency > 1 ? new RegExp(`${concurrency} at a time`) : /one by one/);
   });
 
   it("--concurrency above availableParallelism() is clamped down", async () => {
