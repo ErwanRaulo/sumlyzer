@@ -53,11 +53,16 @@
   },
   "homepage": "https://github.com/ErwanRaulo/sumlyzer#readme",
   "devDependencies": {
-    "@nodesecure/js-x-ray": "^16.0.0",
-    "@types/node": "^26.1.1",
-    "fast-xml-parser": "^5.10.1"
+    "@nodesecure/js-x-ray": "^16.2.0",
+    "@types/node": "^26.6.10",
+    "fast-xml-parser": "^5.12.1"
   },
   "dependencies": {
-    "glob": "^13.0.6"
+    "glob": "^14.0.6"
+  },
+  "overrides": {
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "^11.0.1"
+    }
   }
 }
