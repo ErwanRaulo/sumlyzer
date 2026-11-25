@@ -16,9 +16,10 @@ Requires Node.js >= 22 (native `styleText`, `Promise.withResolvers`).
 ```
 git clone <your fork>
 cd sumlyzer
+npm ci
 ```
 
-There are no dependencies, so there's nothing to install.
+`npm run security-scan` (js-x-ray) needs Node.js >= 24.
 
 ## Running the tests
 
@@ -35,11 +36,11 @@ node /path/to/sumlyzer/bin/sumlyzer.mjs --ff
 
 ## Conventions
 
-- Zero runtime dependencies as much as possible. Prefer a native Node.js API over adding a
-  package.
-- Keep `src/run.mjs` functions small and pure where possible, they're unit
-  tested directly (`test/run.spec.mjs`), which only works if they don't
-  depend on hidden state.
+- Keep runtime dependencies to a minimum (currently only `glob`). Prefer a
+  native Node.js API over adding a package.
+- Keep `src/` functions small and pure where possible, so they can be unit
+  tested directly (`test/<module>.spec.mjs`) without depending on hidden
+  state. End-to-end behavior goes through the CLI (`test/cli.spec.mjs`).
 - Only export what `bin/sumlyzer.mjs` or the test suite actually import.
   Everything else stays internal (see `package.json`, which has no `main` /
   `exports`, the CLI is the only public surface).
@@ -51,7 +52,9 @@ node /path/to/sumlyzer/bin/sumlyzer.mjs --ff
 1. Fork the repo and create a branch from `main`.
 2. Make your change, with a test if it changes behavior.
 3. Make sure `npm test` passes.
-4. Open a pull request describing the problem it solves.
+4. Add a line under `## [Unreleased]` in [CHANGELOG.md](./CHANGELOG.md) if
+   the change is user-facing.
+5. Open a pull request describing the problem it solves.
 
 ## Reporting bugs
 
