@@ -5,6 +5,7 @@
 <h1 align="center">Sumlyzer</h1>
 
 <p align="center">
+  <a href="https://github.com/ErwanRaulo/sumlyzer/actions/workflows/ci.yml"><img src="https://github.com/ErwanRaulo/sumlyzer/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://www.npmjs.com/package/sumlyzer"><img src="https://img.shields.io/npm/v/sumlyzer.svg" alt="npm version" /></a>
   <a href="https://www.npmjs.com/package/sumlyzer"><img src="https://img.shields.io/npm/dm/sumlyzer.svg" alt="npm downloads" /></a>
   <a href="https://www.npmjs.com/package/sumlyzer"><img src="https://img.shields.io/node/v/sumlyzer.svg" alt="node engine" /></a>
@@ -66,7 +67,7 @@ Exit code is `1` if any workspace fails, `0` otherwise — safe to drop straight
 - **GitHub Actions**: on `GITHUB_ACTIONS=true`, each workspace's output is auto-wrapped in a collapsible `::group::` block. No other CI provider has folding support yet.
 - **Concurrency** (`--concurrency <n>`): workspaces finish in whatever order they complete, so output interleaves. With `--ff`, only workspaces that haven't started yet are skipped — in-flight ones run to completion.
 - **Changed workspaces** (`--changed`): maps changed files to the workspace directory containing them. Ref auto-detection: uncommitted changes → diff against `HEAD`; clean tree with upstream → merge-base with upstream; clean tree with no upstream → `HEAD`.
-- **Watch mode** (`--watch`): runs once, then keeps watching the workspaces directories. Re-runs the workspace that changed and Whatever else, in the same project, declares it as a `dependencies`/`devDependencies` entry . `node_modules`, `.git`, `coverage`, and dotfiles are ignored. Stop with `Ctrl+C`. Not compatible with `--junit`.
+- **Watch mode** (`--watch`): runs once, then keeps watching the workspaces directories. Re-runs the workspace that changed, plus every workspace of the same project that depends on it, directly or transitively, through `dependencies`/`devDependencies`. `node_modules`, `.git`, `coverage`, and dotfiles are ignored. Stop with `Ctrl+C`. Not compatible with `--junit`.
 - Own `--test-reporter` in a workspace's script is detected ahead of time and that workspace is skipped, to avoid colliding with sumlyzer's own reporter.
 
 npm doesn't have native fail-fast on `--workspaces` yet — discussed in
@@ -77,13 +78,15 @@ Sumlyzer's `--ff` gets you there in the meantime.
 
 ## Roadmap
 
-**Watch mode**: walk the workspace dependency graph so a change in one workspace also re-runs the ones that depend on it.
-
-**MCP server**: allow LLM agent to run the fail fast mode on any project organized with npm workspaces.
+**MCP server**: allow LLM agents to run the fail fast mode on any project organized with npm workspaces.
 
 ## Contributing
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md).
+See [CONTRIBUTING.md](./CONTRIBUTING.md). Release history is in [CHANGELOG.md](./CHANGELOG.md).
+
+## Security
+
+Please report vulnerabilities privately, see [SECURITY.md](./SECURITY.md).
 
 ## License
 

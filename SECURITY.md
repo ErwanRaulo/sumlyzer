@@ -2,8 +2,12 @@
 
 ## Supported versions
 
-`sumlyzer` is pre-1.0 (`0.x`). Only the latest published version on npm
-receives security fixes.
+Only the latest published version on npm receives security fixes.
+
+| Version | Supported |
+| --- | --- |
+| latest `1.x` | ✅ |
+| older `1.x`, `0.x` | ❌ |
 
 ## Reporting a vulnerability
 
@@ -12,7 +16,7 @@ Please **do not** open a public issue for a security vulnerability.
 Use GitHub's [private vulnerability reporting](https://github.com/ErwanRaulo/sumlyzer/security/advisories/new)
 for this repository instead. Include:
 
-- The version of `sumlyzer` you're using (`npx sumlyzer --version`)
+- The version of `sumlyzer` you're using (`npm ls sumlyzer`)
 - The command / options that trigger the issue
 - Your Node.js version and OS
 - Steps to reproduce, or a minimal workspace layout that shows the problem
@@ -23,7 +27,8 @@ the advisory unless you ask otherwise.
 
 ## Scope
 
-`sumlyzer` has zero runtime dependencies and only shells out to `npm run` on
+`sumlyzer` has a single runtime dependency ([`glob`](https://www.npmjs.com/package/glob),
+to resolve `workspaces` patterns) and only shells out to `npm run` on
 workspaces already declared in the project's own `package.json`. It does
 not fetch remote code or accept untrusted input over a network. Every CI
 run also audits dependencies (`npm audit`) and scans the source with
