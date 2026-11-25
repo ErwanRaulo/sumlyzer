@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { writeFile } from "node:fs/promises";
+import { access, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { getChangedFiles, resolveDefaultRef, selectChangedWorkspaces } from "../src/changed.mjs";
@@ -26,6 +26,29 @@ describe("getChangedFiles", () => {
   it("throws a GitDiffError when the cwd isn't a git repository", async () => {
     await withTempDir("sumlyzer-changed-unit-", (dir) => {
       assert.throws(() => getChangedFiles(dir, "HEAD"), GitDiffError);
+    });
+  });
+
+  it("lists files changed since the given ref", async () => {
+    await withGitRepo(async (dir, baseline) => {
+      await writeFile(path.join(dir, "file.txt"), "changed\n");
+
+      assert.deepEqual(getChangedFiles(dir, baseline), ["file.txt"]);
+    });
+  });
+
+  it("never lets a ref be parsed as a git option", async () => {
+    await withGitRepo(async (dir) => {
+      const injected = path.join(dir, "injected.txt");
+
+      assert.throws(() => getChangedFiles(dir, `--output=${injected}`), GitDiffError);
+      await assert.rejects(access(injected), { code: "ENOENT" });
+    });
+  });
+
+  it("never lets a ref be parsed as a pathspec", async () => {
+    await withGitRepo(async (dir) => {
+      assert.throws(() => getChangedFiles(dir, "file.txt"), GitDiffError);
     });
   });
 });

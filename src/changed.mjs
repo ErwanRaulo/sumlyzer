@@ -21,7 +21,9 @@ function tryGit(root, args) {
 }
 
 export function getChangedFiles(root, ref) {
-  const tracked = runGit(root, ["diff", "--name-only", ref], ref);
+  // --end-of-options keeps a ref like "--output=<file>" from being parsed as an
+  // option, the trailing "--" keeps it from being parsed as a pathspec.
+  const tracked = runGit(root, ["diff", "--name-only", "--end-of-options", ref, "--"], ref);
   const untracked = runGit(root, ["ls-files", "--others", "--exclude-standard"], ref);
 
   return [...new Set([...tracked, ...untracked])];
