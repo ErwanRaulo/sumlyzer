@@ -6,12 +6,18 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `-v, --version` prints the installed version.
+
 ### Fixed
 
 - Workspace scripts (and their `pre`/`post` hooks) now get the same
   `npm_package_*` and `npm_lifecycle_*` variables as with `npm run`.
   Previously none were set, or the root package's leaked through when
   sumlyzer itself was launched from an npm script.
+- A missing or invalid root `package.json` now prints a one-line error
+  instead of a stack trace.
 
 ## [1.4.1] - 2026-11-25
 
