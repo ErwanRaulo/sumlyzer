@@ -28,8 +28,9 @@ the advisory unless you ask otherwise.
 ## Scope
 
 `sumlyzer` has a single runtime dependency ([`glob`](https://www.npmjs.com/package/glob),
-to resolve `workspaces` patterns) and only shells out to `npm run` on
-workspaces already declared in the project's own `package.json`. It does
+to resolve `workspaces` patterns). It only runs, in a shell like `npm run`
+does, the `pre<script>`/`<script>`/`post<script>` commands of workspaces
+already declared in the project's own `package.json`. It does
 not fetch remote code or accept untrusted input over a network. Every CI
 run also audits dependencies (`npm audit`) and scans the source with
 [`@nodesecure/js-x-ray`](https://github.com/NodeSecure/js-x-ray). Reports

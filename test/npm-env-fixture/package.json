@@ -1,0 +1,8 @@
+{
+  "name": "npm-env-fixture",
+  "version": "9.9.9",
+  "private": true,
+  "workspaces": [
+    "workspaces/env-ws"
+  ]
+}

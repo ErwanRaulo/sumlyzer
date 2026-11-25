@@ -33,6 +33,7 @@ const LAUNCH_ERROR_FIXTURE = path.join(TEST_PATH, "launch-error-fixture");
 const LIFECYCLE_HOOKS_FIXTURE = path.join(TEST_PATH, "lifecycle-hooks-fixture");
 const BIN_RESOLUTION_FIXTURE = path.join(TEST_PATH, "bin-resolution-fixture");
 const COUNT_POLLUTION_FIXTURE = path.join(TEST_PATH, "count-pollution-fixture");
+const NPM_ENV_FIXTURE = path.join(TEST_PATH, "npm-env-fixture");
 
 async function pgrepMatches(pattern) {
   try {
@@ -96,7 +97,10 @@ async function runCli(args, cwd, env) {
   // Avoid suite's own CI run setting GITHUB_ACTIONS=true, which would trigger the fold markers.
   // Also strip FORCE_COLOR: a shell that forces colors on would inject ANSI codes into stdout
   // and break assertions that expect plain adjacent text.
-  const childEnv = { ...process.env };
+  // Same for the npm_package_*/npm_lifecycle_* vars npm sets when the suite itself runs via `npm test`.
+  const childEnv = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => !key.startsWith("npm_package_") && !key.startsWith("npm_lifecycle_"))
+  );
   delete childEnv.GITHUB_ACTIONS;
   delete childEnv.FORCE_COLOR;
   Object.assign(childEnv, env);
@@ -465,6 +469,34 @@ describe("sumlyzer run behavior", () => {
       assert.match(stdout, /posttest-fails-ws-test-ran/);
       assert.match(stdout, /posttest-fails-ws-posttest-ran/);
       assert.match(stdout, /✗ posttest-fails-ws failed/);
+    });
+  });
+
+  it("exposes the same npm_package_* and npm_lifecycle_* variables to each phase as npm run does", async () => {
+    await withTempDir("sumlyzer-npm-env-", async (markerDir) => {
+      // Simulates sumlyzer itself being launched from the root's own npm script.
+      const { code } = await runCli([], NPM_ENV_FIXTURE, {
+        NPM_ENV_MARKER_DIR: markerDir,
+        npm_package_name: "npm-env-fixture",
+        npm_package_version: "9.9.9",
+        npm_lifecycle_event: "test:all"
+      });
+
+      assert.equal(code, 0);
+
+      for (const event of ["pretest", "test", "posttest"]) {
+        const vars = JSON.parse(await readFile(path.join(markerDir, `${event}.json`), "utf8"));
+
+        assert.deepEqual(vars, {
+          npm_lifecycle_event: event,
+          npm_lifecycle_script: "node ../../dump-npm-env.mjs",
+          npm_package_json: path.join(NPM_ENV_FIXTURE, "workspaces", "env-ws", "package.json"),
+          npm_package_name: "env-ws",
+          npm_package_version: "2.3.4",
+          npm_package_config_port: "8080",
+          npm_package_engines_node: ">=22"
+        });
+      }
     });
   });
 
