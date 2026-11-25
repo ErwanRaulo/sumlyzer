@@ -45,6 +45,7 @@ Run from the root of an npm workspaces project.
 | `--junit <path>` | off | write an aggregated JUnit XML report |
 | `--ref <ref>` | auto-detect | git ref to diff against for `--changed` |
 | `-w, --watch` | off | re-run on file change (can't be combined with `--junit`) |
+| `-v, --version` | | print the sumlyzer version |
 | `-h, --help` | | print usage |
 
 Exit code is `1` if any workspace fails, `0` otherwise — safe to drop straight into CI.

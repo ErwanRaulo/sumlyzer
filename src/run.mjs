@@ -10,7 +10,7 @@ import { buildJunitReport } from "./junit.mjs";
 import { buildDependentsGraph, expandWithDependents } from "./graph.mjs";
 import { watchWorkspaces } from "./watch.mjs";
 import { red, dim, workspaceName, githubGroupSyntax, printWorkspaceResult, printSummary, reportOutcome } from "./reporter.mjs";
-import { NoWorkspacesError, InvalidPackageJsonError, WorkspaceLaunchError } from "./errors.mjs";
+import { NoWorkspacesError, InvalidPackageJsonError, RootPackageJsonError, WorkspaceLaunchError } from "./errors.mjs";
 import { hasOwnReporter, prepareEnv, parseResult } from "./runners/nodeTest.mjs";
 import { getChangedFiles, resolveDefaultRef, selectChangedWorkspaces } from "./changed.mjs";
 import { npmScriptEnv } from "./npmScriptEnv.mjs";
@@ -483,7 +483,14 @@ function runWatchMode({ root, workspaces, workspacesToRun, scriptName, scriptCom
 
 export async function main({ root, scriptName, ff, junitPath, concurrency = 1, changed = false, ref, watch = false }) {
 
-  const { workspaces } = readJson(path.join(root, "package.json"));
+  let rootPkg;
+  try {
+    rootPkg = readJson(path.join(root, "package.json"));
+  }
+  catch (error) {
+    throw new RootPackageJsonError(root, error);
+  }
+  const { workspaces } = rootPkg;
 
   if (!workspaces || workspaces.length === 0) {
     throw new NoWorkspacesError();
