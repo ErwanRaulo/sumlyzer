@@ -1,15 +1,21 @@
 name: Release
 
-# Publishes to npm with provenance via npm trusted publishing (OIDC), no
-# NPM_TOKEN secret. Requires a trusted publisher configured on npmjs.com for
-# this repository and the "release.yml" workflow.
+# Publishes the version in package.json to npm, with provenance, via npm
+# trusted publishing (OIDC), no NPM_TOKEN secret. Requires a trusted publisher
+# configured on npmjs.com for this repository and the "release.yml" workflow.
+#
+# Run it manually: Actions > Release > Run workflow (branch: main),
+# or `gh workflow run release.yml --ref main`.
 
 on:
-  release:
-    types: [published]
+  workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   publish:
@@ -19,6 +25,12 @@ jobs:
       contents: read
       id-token: write
     steps:
+      - name: Only publish from main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Run this workflow from main (got ${GITHUB_REF})"
+          exit 1
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -28,15 +40,15 @@ jobs:
           node-version: 24.x
           registry-url: https://registry.npmjs.org
 
-      - name: Check the release tag matches package.json
-        env:
-          TAG: ${{ github.event.release.tag_name }}
+      - name: Check this version isn't already on npm
         run: |
-          version="v$(node -p 'require("./package.json").version')"
-          if [ "$TAG" != "$version" ]; then
-            echo "::error::Release tag $TAG does not match package.json version $version"
+          name="$(node -p 'require("./package.json").name')"
+          version="$(node -p 'require("./package.json").version')"
+          if npm view "${name}@${version}" version >/dev/null 2>&1; then
+            echo "::error::${name}@${version} is already published, bump the version first"
             exit 1
           fi
+          echo "Publishing ${name}@${version}"
 
       - name: Check npm supports trusted publishing (>= 11.5.1)
         run: node -e 'const [a,b,c]=process.argv[1].split(".").map(Number); if (a<11||(a===11&&(b<5||(b===5&&c<1)))) { console.error(`npm ${process.argv[1]} is too old for trusted publishing`); process.exit(1) }' "$(npm -v)"
