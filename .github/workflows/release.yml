@@ -1,14 +1,15 @@
 name: Release
 
-# Publishes the version in package.json to npm, with provenance, via npm
+# Publishes to npm when a vX.Y.Z tag is pushed, with provenance, via npm
 # trusted publishing (OIDC), no NPM_TOKEN secret. Requires a trusted publisher
 # configured on npmjs.com for this repository and the "release.yml" workflow.
 #
-# Run it manually: Actions > Release > Run workflow (branch: main),
-# or `gh workflow run release.yml --ref main`.
+# Flow: merge a PR bumping "version" in package.json, then tag main:
+#   git tag v1.4.1 && git push origin v1.4.1
 
 on:
-  workflow_dispatch:
+  push:
+    tags: ["v*.*.*"]
 
 permissions:
   contents: read
@@ -25,30 +26,29 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - name: Only publish from main
-        if: github.ref != 'refs/heads/main'
-        run: |
-          echo "::error::Run this workflow from main (got ${GITHUB_REF})"
-          exit 1
-
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24.x
           registry-url: https://registry.npmjs.org
 
-      - name: Check this version isn't already on npm
+      - name: Check the tag matches package.json and points to main
+        env:
+          TAG: ${{ github.ref_name }}
         run: |
-          name="$(node -p 'require("./package.json").name')"
-          version="$(node -p 'require("./package.json").version')"
-          if npm view "${name}@${version}" version >/dev/null 2>&1; then
-            echo "::error::${name}@${version} is already published, bump the version first"
+          version="v$(node -p 'require("./package.json").version')"
+          if [ "$TAG" != "$version" ]; then
+            echo "::error::Tag $TAG does not match package.json version $version"
             exit 1
           fi
-          echo "Publishing ${name}@${version}"
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Tag $TAG does not point to a commit on main"
+            exit 1
+          fi
 
       - name: Check npm supports trusted publishing (>= 11.5.1)
         run: node -e 'const [a,b,c]=process.argv[1].split(".").map(Number); if (a<11||(a===11&&(b<5||(b===5&&c<1)))) { console.error(`npm ${process.argv[1]} is too old for trusted publishing`); process.exit(1) }' "$(npm -v)"
