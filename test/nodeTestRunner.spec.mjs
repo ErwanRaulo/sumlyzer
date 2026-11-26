@@ -64,10 +64,10 @@ describe("prepareEnv", () => {
 
   it("produces a NODE_OPTIONS that node parses back to the exact junit path, backslashes included", async () => {
     await withTempDir("sumlyzer-node-options-", async (dir) => {
-      // A backslash is a valid file name character on POSIX, so this exercises the
-      // same escaping a Windows path needs.
+      // Nested directories on Windows, a single name containing backslashes on POSIX:
+      // either way the path NODE_OPTIONS has to carry contains backslashes.
       const junitDir = path.join(dir, String.raw`out\with\backslashes`);
-      await mkdir(junitDir);
+      await mkdir(junitDir, { recursive: true });
       await writeFile(path.join(dir, "ok.spec.mjs"), "import { test } from 'node:test'; test('ok', () => {});");
       const junitPath = path.join(junitDir, "report.xml");
 
