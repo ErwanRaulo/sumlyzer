@@ -6,18 +6,18 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-11-26
+
 ### Added
 
 - `-v, --version` prints the installed version.
 
 ### Fixed
 
-- Workspace scripts (and their `pre`/`post` hooks) now get the same
-  `npm_package_*` and `npm_lifecycle_*` variables as with `npm run`.
-  Previously none were set, or the root package's leaked through when
-  sumlyzer itself was launched from an npm script.
-- A missing or invalid root `package.json` now prints a one-line error
-  instead of a stack trace.
+- Scripts and their `pre`/`post` hooks get the same `npm_package_*` and
+  `npm_lifecycle_*` variables as with `npm run`.
+- A missing or invalid root `package.json` prints a one-line error instead
+  of a stack trace.
 - Windows: `node:test` workspaces crashed, `--junit` paths lost their
   separators, `--changed`/`--watch` matched no workspace.
 
@@ -115,7 +115,8 @@ No release notes, see the [diff](https://github.com/ErwanRaulo/sumlyzer/compare/
 Earlier versions (`0.1.1` to `0.5.3`) have no release notes, see the
 [tags](https://github.com/ErwanRaulo/sumlyzer/tags).
 
-[Unreleased]: https://github.com/ErwanRaulo/sumlyzer/compare/v1.4.1...HEAD
+[Unreleased]: https://github.com/ErwanRaulo/sumlyzer/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/ErwanRaulo/sumlyzer/compare/v1.4.1...v1.5.0
 [1.4.1]: https://github.com/ErwanRaulo/sumlyzer/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/ErwanRaulo/sumlyzer/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/ErwanRaulo/sumlyzer/compare/v1.3.0...v1.3.1
