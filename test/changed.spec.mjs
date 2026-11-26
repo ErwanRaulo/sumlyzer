@@ -1,9 +1,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { access, writeFile } from "node:fs/promises";
+import { access, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { getChangedFiles, resolveDefaultRef, selectChangedWorkspaces } from "../src/changed.mjs";
+import { getChangedFiles, resolveDefaultRef, selectChangedWorkspaces, selectAffectedWorkspaces } from "../src/changed.mjs";
 import { GitDiffError } from "../src/errors.mjs";
 import { git, commitAll, withTempDir } from "./gitTestHelpers.mjs";
 
@@ -131,5 +131,45 @@ describe("selectChangedWorkspaces", () => {
     const { workspaces } = selectChangedWorkspaces(nested, ["workspaces/app-a/nested/src/index.mjs"]);
 
     assert.deepEqual([...workspaces], ["workspaces/app-a/nested"]);
+  });
+});
+
+describe("selectAffectedWorkspaces", () => {
+  async function withLibAndApp(fn) {
+    return withGitRepo(async (dir, baseline) => {
+      const packages = { lib: {}, app: { dependencies: { lib: "*" } } };
+      for (const [name, fields] of Object.entries(packages)) {
+        await mkdir(path.join(dir, name));
+        await writeFile(path.join(dir, name, "package.json"), JSON.stringify({ name, ...fields }));
+      }
+      await commitAll(dir, "workspaces");
+
+      const workspaces = ["lib", "app"].map((name) => ({ path: name, name }));
+      return fn({ dir, baseline, workspaces });
+    });
+  }
+
+  it("returns the changed workspace, its dependents and the root-level changes", async () => {
+    await withLibAndApp(async ({ dir, workspaces }) => {
+      await writeFile(path.join(dir, "lib", "index.mjs"), "");
+      await writeFile(path.join(dir, "file.txt"), "changed\n");
+
+      const selection = selectAffectedWorkspaces({ root: dir, allPaths: ["lib", "app"], workspaces, ref: "HEAD" });
+
+      assert.deepEqual(selection, {
+        hasChanges: true,
+        rootChangeFiles: ["file.txt"],
+        affected: workspaces,
+        dependents: ["app"]
+      });
+    });
+  });
+
+  it("reports no changes on a clean tree", async () => {
+    await withLibAndApp(async ({ dir, workspaces }) => {
+      const selection = selectAffectedWorkspaces({ root: dir, allPaths: ["lib", "app"], workspaces, ref: "HEAD" });
+
+      assert.deepEqual(selection, { hasChanges: false, rootChangeFiles: [], affected: [], dependents: [] });
+    });
   });
 });
