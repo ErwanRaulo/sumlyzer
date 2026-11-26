@@ -109,7 +109,7 @@ describe("sumlyzer --watch", () => {
     });
   });
 
-  it("stops cleanly on SIGINT", async () => {
+  it("stops cleanly on SIGINT", { skip: process.platform === "win32" && "a POSIX signal can't be sent to a process on Windows: kill() terminates it outright" }, async () => {
     await withWatchFixture(async ({ child, getStdout, exitPromise }) => {
       await waitFor(() => /2\/2 workspaces passed\./.test(getStdout()));
 

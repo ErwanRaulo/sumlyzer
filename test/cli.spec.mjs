@@ -550,7 +550,7 @@ describe("sumlyzer run behavior", () => {
     assert.match(stdout, /│ count-pollution-ws +│ 'PASS' +│ [^│]+│ 5 +│ 5 +│ 0 +│/);
   });
 
-  it("kills the underlying test process on SIGINT instead of leaving it orphaned", async () => {
+  it("kills the underlying test process on SIGINT instead of leaving it orphaned", { skip: process.platform === "win32" && "a POSIX signal can't be sent to a process on Windows: kill() terminates it outright" }, async () => {
     const { child, ready } = spawnAndWaitForOutput("node", [BIN], { cwd: INTERRUPT_FIXTURE }, "running slow-ws");
     await ready;
 
@@ -642,10 +642,11 @@ describe("sumlyzer run behavior", () => {
   });
 
   it("prints a friendly message instead of a stack trace when the JUnit report can't be written", async () => {
-    const { stderr, code } = await runCli(["--junit", "/no-such-directory/report.xml"], JUNIT_FIXTURE);
+    const reportPath = path.resolve("/no-such-directory/report.xml");
+    const { stderr, code } = await runCli(["--junit", reportPath], JUNIT_FIXTURE);
 
     assert.equal(code, 1);
-    assert.match(stderr, /Could not write JUnit report to "\/no-such-directory\/report.xml"/);
+    assert.ok(stderr.includes(`Could not write JUnit report to "${reportPath}"`), stderr);
     assert.doesNotMatch(stderr, /at async|node:internal/);
   });
 });
