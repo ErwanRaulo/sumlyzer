@@ -1,6 +1,9 @@
 import { watch } from "node:fs";
 import path from "node:path";
 
+import { buildDependentsGraph, expandWithDependents } from "./graph.mjs";
+import { dim, workspaceName } from "./reporter.mjs";
+
 const IGNORED_SEGMENTS = new Set(["node_modules", "coverage", ".git"]);
 
 function isIgnored(relPath) {
@@ -12,7 +15,7 @@ function matchWorkspace(relPath, workspaces) {
   return workspaces.find((wsPath) => normalized === wsPath || normalized.startsWith(`${wsPath}/`));
 }
 
-export function watchWorkspaces({ root, workspaces, onChange, debounceMs = 300, isSuppressed = () => false }) {
+function watchWorkspaces({ root, workspaces, onChange, debounceMs = 300, isSuppressed = () => false }) {
   const pending = new Set();
   let timer = null;
 
@@ -41,4 +44,55 @@ export function watchWorkspaces({ root, workspaces, onChange, debounceMs = 300, 
       watcher.close();
     }
   };
+}
+
+// A run can write files inside its own workspace (coverage, artifacts) just after it
+// exits; ignoring them briefly stops the workspace from re-triggering itself forever.
+const SETTLE_COOLDOWN_MS = 500;
+
+// Runs `rerun` on each change, for the changed workspaces and their dependents,
+// until SIGINT/SIGTERM.
+export function watchAndRerun({ root, allPaths, workspaces, rerun }) {
+  const dependentsGraph = buildDependentsGraph(root, allPaths);
+  const byPath = new Map(workspaces.map((workspace) => [workspace.path, workspace]));
+  const settling = new Set();
+
+  async function onChange(changedPaths) {
+    const affected = [...expandWithDependents(changedPaths, dependentsGraph)]
+      .map((wsPath) => byPath.get(wsPath))
+      .filter(Boolean);
+    if (affected.length === 0) {
+      return;
+    }
+
+    const changedNames = [...changedPaths].map(workspaceName).join(", ");
+    const affectedNames = affected.map((workspace) => workspace.name).join(", ");
+    console.log(dim(`\n[watch] change detected in ${changedNames} → re-running: ${affectedNames}\n`));
+
+    for (const workspace of affected) {
+      settling.add(workspace.path);
+    }
+    try {
+      await rerun(affected);
+    }
+    finally {
+      setTimeout(() => {
+        for (const workspace of affected) {
+          settling.delete(workspace.path);
+        }
+      }, SETTLE_COOLDOWN_MS).unref();
+    }
+  }
+
+  const watcher = watchWorkspaces({ root, workspaces: allPaths, isSuppressed: (wsPath) => settling.has(wsPath), onChange });
+
+  return new Promise((resolve) => {
+    const stop = () => {
+      console.log(dim("\n[watch] stopping.\n"));
+      watcher.close();
+      resolve();
+    };
+    process.once("SIGINT", stop);
+    process.once("SIGTERM", stop);
+  });
 }

@@ -34,6 +34,19 @@ node bin/sumlyzer.mjs --help
 node /path/to/sumlyzer/bin/sumlyzer.mjs --ff
 ```
 
+## Architecture
+
+| Module | Role |
+| --- | --- |
+| `run.mjs` | `main()`: wires the steps below |
+| `workspaces.mjs` | Resolves and loads workspaces and their script phases |
+| `schedule.mjs` | Worker pool, `--concurrency`, `--ff` |
+| `workspaceProcess.mjs` | Spawns phases, kills process trees, handles interrupts |
+| `scriptEnv.mjs` | Child environment: npm variables, `PATH`, runner options |
+| `runner.mjs` | The test runner in use (`runners/nodeTest.mjs`) |
+| `changed.mjs`, `watch.mjs`, `junitReport.mjs` | `--changed`, `--watch`, `--junit` |
+| `reporter.mjs` | Terminal output |
+
 ## Conventions
 
 - Keep runtime dependencies to a minimum (currently only `glob`). Prefer a
