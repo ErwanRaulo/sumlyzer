@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 
 import { GitDiffError } from "./errors.mjs";
+import { buildDependentsGraph, expandWithDependents } from "./graph.mjs";
 import { dim } from "./reporter.mjs";
 
 function runGit(root, args, ref) {
@@ -77,7 +78,7 @@ function resolveRef(root, explicitRef) {
   return resolved;
 }
 
-// Returns the workspaces with changes, or null when there's nothing to run (already reported).
+// Returns the changed workspaces and their dependents, or null when there's nothing to run (already reported).
 export function filterChangedWorkspaces({ root, allPaths, workspaces, ref: explicitRef }) {
   const { ref, label } = resolveRef(root, explicitRef);
 
@@ -94,8 +95,11 @@ export function filterChangedWorkspaces({ root, allPaths, workspaces, ref: expli
     console.log(dim(`--changed: "${rootChangeFiles[0]}"${suffix} is outside every workspace, ignoring`));
   }
 
-  const filtered = workspaces.filter((workspace) => changedPaths.has(workspace.path));
-  console.log(dim(`--changed: running ${filtered.length}/${workspaces.length} workspace(s) with changes since "${label}"`));
+  const affectedPaths = expandWithDependents(changedPaths, buildDependentsGraph(root, allPaths));
+  const filtered = workspaces.filter((workspace) => affectedPaths.has(workspace.path));
+  const dependents = filtered.filter((workspace) => !changedPaths.has(workspace.path)).map((workspace) => workspace.name);
+  const dependentsNote = dependents.length > 0 ? ` (incl. dependents: ${dependents.join(", ")})` : "";
+  console.log(dim(`--changed: running ${filtered.length}/${workspaces.length} workspace(s) with changes since "${label}"${dependentsNote}`));
 
   if (filtered.length === 0) {
     console.log(dim("No eligible workspace changed."));
