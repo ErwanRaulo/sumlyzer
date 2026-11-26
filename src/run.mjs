@@ -51,7 +51,7 @@ async function resolveWorkspacePaths(root, workspaces) {
   const resolved = new Set();
 
   for (const pattern of patterns) {
-    // posix: "/"-separated on Windows too, to match git and fs.watch paths.
+    // posix: "/" separators on Windows too, like git and fs.watch.
     const matches = await glob(pattern, { cwd: root, ignore, posix: true });
 
     for (const match of matches.sort((a, b) => a.localeCompare(b, "en"))) {

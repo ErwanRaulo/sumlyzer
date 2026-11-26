@@ -550,7 +550,7 @@ describe("sumlyzer run behavior", () => {
     assert.match(stdout, /│ count-pollution-ws +│ 'PASS' +│ [^│]+│ 5 +│ 5 +│ 0 +│/);
   });
 
-  it("kills the underlying test process on SIGINT instead of leaving it orphaned", { skip: process.platform === "win32" && "a POSIX signal can't be sent to a process on Windows: kill() terminates it outright" }, async () => {
+  it("kills the underlying test process on SIGINT instead of leaving it orphaned", { skip: process.platform === "win32" && "no POSIX signals on Windows" }, async () => {
     const { child, ready } = spawnAndWaitForOutput("node", [BIN], { cwd: INTERRUPT_FIXTURE }, "running slow-ws");
     await ready;
 
