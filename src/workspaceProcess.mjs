@@ -99,7 +99,7 @@ export async function runWorkspace({ root, workspace, junitDestPath, activeChild
   const captured = await runPhases({ root, workspace, junitDestPath, activeChildren });
 
   return {
-    wsPath: workspace.path,
+    workspace,
     exitCode: captured.exitCode,
     durationMs: Date.now() - start,
     junitDestPath,

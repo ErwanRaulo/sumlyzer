@@ -1,5 +1,7 @@
 import { styleText } from "node:util";
 
+import { workspaceName } from "./workspaces.mjs";
+
 const green = (str) => styleText("green", str);
 export const red = (str) => styleText("red", str);
 const blue = (str) => styleText("blue", str);
@@ -22,10 +24,6 @@ export function githubGroupSyntax(env) {
   return null;
 }
 
-export function workspaceName(wsPath) {
-  return (wsPath ?? "").replace(/^workspaces[\\/]/, "");
-}
-
 export function ciGroupTitle(name, result) {
   const seconds = formatSeconds(result.durationMs);
   const countsLabel = result.counts ? ` (${result.counts.pass}/${result.counts.tests} tests)` : "";
@@ -39,7 +37,7 @@ function printWorkspaceResultCi(name, result, ciGroup) {
   process.stdout.write(`${ciGroup.end()}\n`);
 }
 
-export function printWorkspaceResult(name, result, ciGroup) {
+export function printWorkspaceResult(name, result, ciGroup = githubGroupSyntax(process.env)) {
   if (ciGroup) {
     printWorkspaceResultCi(name, result, ciGroup);
     return;
@@ -70,7 +68,7 @@ function summaryRow(status, duration, counts) {
 function extraCountsFootnote(results, key, label) {
   const entries = results
     .filter(({ counts }) => Number(counts?.[key]) > 0)
-    .map(({ wsPath, counts }) => `${workspaceName(wsPath)} (${counts[key]})`);
+    .map(({ workspace, counts }) => `${workspace.name} (${counts[key]})`);
 
   return entries.length > 0 ? `${label}: ${entries.join(", ")}` : null;
 }
@@ -79,11 +77,11 @@ export function printSummary(results, skipped) {
   console.log(bold("\nSummary"));
 
   const rows = {};
-  for (const { wsPath, exitCode, durationMs, counts } of results) {
-    rows[workspaceName(wsPath)] = summaryRow(exitCode === 0 ? "PASS" : "FAIL", formatSeconds(durationMs), counts);
+  for (const { workspace, exitCode, durationMs, counts } of results) {
+    rows[workspace.name] = summaryRow(exitCode === 0 ? "PASS" : "FAIL", formatSeconds(durationMs), counts);
   }
-  for (const wsPath of skipped) {
-    rows[workspaceName(wsPath)] = summaryRow("SKIPPED", "-", null);
+  for (const workspace of skipped) {
+    rows[workspace.name] = summaryRow("SKIPPED", "-", null);
   }
 
   console.table(rows);
@@ -96,7 +94,7 @@ export function printSummary(results, skipped) {
   }
 
   if (skipped.length > 0) {
-    console.log(dim(`${skipped.length} workspace(s) skipped (--ff): ${skipped.map(workspaceName).join(", ")}`));
+    console.log(dim(`${skipped.length} workspace(s) skipped (--ff): ${skipped.map((workspace) => workspace.name).join(", ")}`));
   }
 }
 
@@ -110,12 +108,11 @@ export function reportOutcome(results) {
 
   console.log(red(`${failed.length}/${results.length} workspace(s) failed:`));
   for (const result of failed) {
-    console.log(red(`  ${workspaceName(result.wsPath)}`));
+    console.log(red(`  ${result.workspace.name}`));
     for (const testName of result.failingTests) {
       console.log(dim(`    ✖ ${testName}`));
     }
   }
-  process.exitCode = 1;
 }
 
 export function printWorkspaceStart(name) {
@@ -167,9 +164,9 @@ export function printWatchStopping() {
   console.log(dim("\n[watch] stopping.\n"));
 }
 
-export function printOwnReporterSkips(scriptName, wsPaths) {
-  for (const wsPath of wsPaths) {
-    console.log(dim(`⊘ ${workspaceName(wsPath)}: skipped, own --test-reporter detected in its "${scriptName}" script`));
+export function printOwnReporterSkips(scriptName, workspaces) {
+  for (const workspace of workspaces) {
+    console.log(dim(`⊘ ${workspace.name}: skipped, own --test-reporter detected in its "${scriptName}" script`));
   }
 }
 

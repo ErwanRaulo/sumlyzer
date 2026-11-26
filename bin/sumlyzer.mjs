@@ -6,10 +6,10 @@ import { availableParallelism } from "node:os";
 
 import { main } from "../src/run.mjs";
 import { NoWorkspacesError, InvalidPackageJsonError, RootPackageJsonError, WorkspaceLaunchError, GitDiffError } from "../src/errors.mjs";
-import { red } from "../src/reporter.mjs";
+import * as reporter from "../src/reporter.mjs";
 
 function printWorkspaceError(message) {
-  console.error(red(message.split("\n").map((line) => `✗ ${line}`).join("\n")));
+  console.error(reporter.red(message.split("\n").map((line) => `✗ ${line}`).join("\n")));
 }
 
 let args;
@@ -87,7 +87,7 @@ Options:
 }
 
 try {
-  await main({
+  const { failed } = await main({
     root: path.resolve(process.cwd()),
     scriptName: args.script,
     ff: args.ff,
@@ -95,8 +95,12 @@ try {
     concurrency,
     changed: args.changed,
     ref: args.ref,
-    watch: args.watch
+    watch: args.watch,
+    reporter
   });
+  if (failed) {
+    process.exitCode = 1;
+  }
 }
 catch (error) {
   if (error instanceof NoWorkspacesError) {

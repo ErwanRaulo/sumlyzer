@@ -2,7 +2,6 @@ import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { buildJunitReport } from "./junit.mjs";
-import { workspaceName } from "./reporter.mjs";
 
 const DEFAULT_JUNIT_FILENAME = "junit.xml";
 
@@ -15,10 +14,10 @@ async function collectJunitEntries(results) {
       continue;
     }
     try {
-      entries.push({ name: workspaceName(result.wsPath), xml: await readFile(result.junitDestPath, "utf8") });
+      entries.push({ name: result.workspace.name, xml: await readFile(result.junitDestPath, "utf8") });
     }
     catch {
-      missing.push(workspaceName(result.wsPath));
+      missing.push(result.workspace.name);
     }
   }
 

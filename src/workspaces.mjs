@@ -3,9 +3,12 @@ import path from "node:path";
 
 import { glob } from "glob";
 
-import { workspaceName } from "./reporter.mjs";
 import { runner } from "./runner.mjs";
 import { NoWorkspacesError, InvalidPackageJsonError, RootPackageJsonError } from "./errors.mjs";
+
+export function workspaceName(wsPath) {
+  return (wsPath ?? "").replace(/^workspaces[\\/]/, "");
+}
 
 function readJson(file) {
   return JSON.parse(readFileSync(file, "utf8"));
@@ -66,24 +69,21 @@ function scriptPhases(scripts, scriptName) {
 }
 
 function loadWorkspace(root, wsPath, scriptName) {
-  let pkg;
+  const workspace = { path: wsPath, name: workspaceName(wsPath), pkg: null, phases: [] };
   try {
-    pkg = readJson(path.join(root, wsPath, "package.json"));
+    workspace.pkg = readJson(path.join(root, wsPath, "package.json"));
   }
   catch (error) {
-    return error.code === "ENOENT" ? { kind: "absent" } : { kind: "invalid", message: error.message };
+    return error.code === "ENOENT" ? { kind: "absent", workspace } : { kind: "invalid", workspace, message: error.message };
   }
 
-  if (!pkg.scripts?.[scriptName]) {
-    return { kind: "absent" };
+  if (!workspace.pkg.scripts?.[scriptName]) {
+    return { kind: "absent", workspace };
   }
 
-  const phases = scriptPhases(pkg.scripts, scriptName);
-  if (phases.some((phase) => runner.hasOwnReporter(phase.command))) {
-    return { kind: "ownReporterConflict" };
-  }
-
-  return { kind: "runnable", workspace: { path: wsPath, name: workspaceName(wsPath), pkg, phases } };
+  workspace.phases = scriptPhases(workspace.pkg.scripts, scriptName);
+  const kind = workspace.phases.some((phase) => runner.hasOwnReporter(phase.command)) ? "ownReporterConflict" : "runnable";
+  return { kind, workspace };
 }
 
 export function loadWorkspaces(root, wsPaths, scriptName) {
@@ -97,10 +97,10 @@ export function loadWorkspaces(root, wsPaths, scriptName) {
       runnable.push(loaded.workspace);
     }
     else if (loaded.kind === "ownReporterConflict") {
-      ownReporterConflicts.push(wsPath);
+      ownReporterConflicts.push(loaded.workspace);
     }
     else if (loaded.kind === "invalid") {
-      invalid.push({ wsPath, message: loaded.message });
+      invalid.push({ workspace: loaded.workspace, message: loaded.message });
     }
   }
 

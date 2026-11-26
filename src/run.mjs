@@ -2,33 +2,29 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import * as reporter from "./reporter.mjs";
 import { resolveWorkspacePaths, loadWorkspaces } from "./workspaces.mjs";
 import { runWorkspaces } from "./schedule.mjs";
 import { writeJunitReport } from "./junitReport.mjs";
 import { resolveChangedRef, selectAffectedWorkspaces } from "./changed.mjs";
 import { watchAndRerun } from "./watch.mjs";
 
-async function runOnce(options, workspaces, junitPath) {
+// Returns whether the run failed: a workspace failed or the JUnit report couldn't be written.
+async function runOnce({ options, reporter, workspaces, junitPath }) {
   const junitDir = junitPath ? await mkdtemp(path.join(tmpdir(), "sumlyzer-junit-")) : null;
-  const ciGroup = reporter.githubGroupSyntax(process.env);
 
-  let completed, skipped;
+  let completed, skipped, junit;
   try {
     ({ completed, skipped } = await runWorkspaces({
       ...options,
       workspaces,
       junitDir,
       onStart: (workspace) => reporter.printWorkspaceStart(workspace.name),
-      onResult: (workspace, result) => reporter.printWorkspaceResult(workspace.name, result, ciGroup)
+      onResult: (workspace, result) => reporter.printWorkspaceResult(workspace.name, result)
     }));
 
     if (junitDir) {
-      const junit = await writeJunitReport(options.root, junitPath, completed);
+      junit = await writeJunitReport(options.root, junitPath, completed);
       reporter.printJunitReport(junit);
-      if (junit.error) {
-        process.exitCode = 1;
-      }
     }
   }
   finally {
@@ -39,10 +35,12 @@ async function runOnce(options, workspaces, junitPath) {
 
   reporter.printSummary(completed, skipped);
   reporter.reportOutcome(completed);
+
+  return completed.some((result) => result.exitCode !== 0) || Boolean(junit?.error);
 }
 
 // Returns the workspaces to run, or null when nothing changed.
-function selectChanged({ root, allPaths, workspaces, ref }) {
+function selectChanged({ reporter, root, allPaths, workspaces, ref }) {
   const changedRef = resolveChangedRef(root, ref);
   reporter.printChangedRef(changedRef);
 
@@ -52,7 +50,20 @@ function selectChanged({ root, allPaths, workspaces, ref }) {
   return selection.affected.length > 0 ? selection.affected : null;
 }
 
-export async function main({ root, scriptName, ff, junitPath, concurrency = 1, changed = false, ref, watch = false }) {
+/**
+ * @param {object} params
+ * @param {string} params.root
+ * @param {string} params.scriptName
+ * @param {boolean} params.ff
+ * @param {string} [params.junitPath]
+ * @param {number} [params.concurrency]
+ * @param {boolean} [params.changed]
+ * @param {string} [params.ref]
+ * @param {boolean} [params.watch]
+ * @param {typeof import("./reporter.mjs")} params.reporter output for every step
+ * @returns {Promise<{ failed: boolean }>}
+ */
+export async function main({ root, scriptName, ff, junitPath, concurrency = 1, changed = false, ref, watch = false, reporter }) {
   const options = { root, scriptName, ff, concurrency };
 
   const allPaths = await resolveWorkspacePaths(root);
@@ -61,32 +72,34 @@ export async function main({ root, scriptName, ff, junitPath, concurrency = 1, c
   reporter.printOwnReporterSkips(scriptName, ownReporterConflicts);
   if (runnable.length === 0) {
     reporter.printNothingToRun(scriptName, ownReporterConflicts);
-    return;
+    return { failed: false };
   }
 
   let workspaces = runnable;
   if (changed) {
-    workspaces = selectChanged({ root, allPaths, workspaces, ref });
+    workspaces = selectChanged({ reporter, root, allPaths, workspaces, ref });
     if (workspaces === null) {
       if (junitPath) {
         reporter.printNoJunitWritten(junitPath);
       }
-      return;
+      return { failed: false };
     }
   }
 
-  await runOnce(options, workspaces, junitPath);
+  let failed = await runOnce({ options, reporter, workspaces, junitPath });
 
   if (watch) {
     await watchAndRerun({
       root,
       allPaths,
       workspaces,
-      rerun: (affected, changedPaths) => {
+      rerun: async (affected, changedPaths) => {
         reporter.printWatchRerun(changedPaths, affected);
-        return runOnce(options, affected);
+        failed = (await runOnce({ options, reporter, workspaces: affected, junitPath: undefined })) || failed;
       }
     });
     reporter.printWatchStopping();
   }
+
+  return { failed };
 }

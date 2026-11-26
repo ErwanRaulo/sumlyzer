@@ -1,7 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { workspaceName, formatSeconds, githubGroupSyntax, ciGroupTitle } from "../src/reporter.mjs";
+import { formatSeconds, githubGroupSyntax, ciGroupTitle } from "../src/reporter.mjs";
+import { workspaceName } from "../src/workspaces.mjs";
 
 describe("workspaceName", () => {
   it("strips the workspaces/ prefix", () => {
