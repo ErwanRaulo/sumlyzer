@@ -63,6 +63,22 @@ function pickError(error) {
 }
 
 /**
+ * @param {NodeTestEvent} event
+ * @returns {event is NodeTestFailEvent}
+ */
+function isFailEvent(event) {
+  return event.type === "test:fail";
+}
+
+/**
+ * @param {NodeTestEvent} event
+ * @returns {event is NodeTestSummaryEvent}
+ */
+function isSummaryEvent(event) {
+  return event.type === "test:summary";
+}
+
+/**
  * node:test emits a "test:summary" per file plus one aggregate at the end.
  * the aggregate is the only one without a "file" attached.
  * @param {NodeTestSummaryEvent["data"]} data
@@ -79,7 +95,7 @@ function isAggregateSummary(data) {
  */
 export default async function* testEventReporter(source) {
   for await (const event of source) {
-    if (event.type === "test:fail") {
+    if (isFailEvent(event)) {
       const line = {
         type: "test:fail",
         name: event.data.name,
@@ -90,7 +106,7 @@ export default async function* testEventReporter(source) {
       continue;
     }
 
-    if (event.type === "test:summary" && isAggregateSummary(event.data)) {
+    if (isSummaryEvent(event) && isAggregateSummary(event.data)) {
       const { counts, duration_ms: durationMs } = event.data;
       const line = {
         type: "test:summary",

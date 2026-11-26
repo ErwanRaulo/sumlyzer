@@ -5,6 +5,6 @@
 ## Checklist
 
 - [ ] I read [CONTRIBUTING.md](../CONTRIBUTING.md)
-- [ ] `npm test` passes
+- [ ] `npm test` and `npm run typecheck` pass
 - [ ] I added/updated a test if this changes behavior
 - [ ] This doesn't expand scope (npm workspaces + `node:test` only) without prior discussion in an issue

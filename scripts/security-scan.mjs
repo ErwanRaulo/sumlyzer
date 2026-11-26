@@ -8,7 +8,7 @@ const findings = [];
 const mjsFiles = (file) => file.endsWith(".mjs")
 
 const files =  ["bin", "src"].flatMap((dir) =>
-  readdirSync(dir, { recursive: true })
+  readdirSync(dir, { recursive: true, encoding: "utf8" })
     .filter(mjsFiles)
     .map((file) => join(dir, file))
 );

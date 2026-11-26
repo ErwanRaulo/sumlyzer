@@ -1,10 +1,15 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "ES2022",
-    "checkJs": false,
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "allowJs": true,
+    "checkJs": true,
+    "strict": false,
+    "noEmit": true,
+    "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["bin/**/*.mjs", "src/**/*.mjs", "test/**/*.mjs"],
+  "include": ["bin/**/*.mjs", "src/**/*.mjs", "scripts/**/*.mjs"],
   "exclude": ["node_modules"]
 }
