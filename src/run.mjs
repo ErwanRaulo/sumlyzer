@@ -14,6 +14,7 @@ import { NoWorkspacesError, InvalidPackageJsonError, RootPackageJsonError, Works
 import { hasOwnReporter, prepareEnv, parseResult } from "./runners/nodeTest.mjs";
 import { getChangedFiles, resolveDefaultRef, selectChangedWorkspaces } from "./changed.mjs";
 import { npmScriptEnv } from "./npmScriptEnv.mjs";
+import { withPath } from "./pathEnv.mjs";
 
 const runner = { hasOwnReporter, prepareEnv, parseResult };
 
@@ -50,7 +51,8 @@ async function resolveWorkspacePaths(root, workspaces) {
   const resolved = new Set();
 
   for (const pattern of patterns) {
-    const matches = await glob(pattern, { cwd: root, ignore });
+    // posix: "/"-separated on Windows too, to match git and fs.watch paths.
+    const matches = await glob(pattern, { cwd: root, ignore, posix: true });
 
     for (const match of matches.sort((a, b) => a.localeCompare(b, "en"))) {
       resolved.add(match);
@@ -181,11 +183,10 @@ function buildPhaseOptions({ root, wsPath, junitDestPath, scriptPhases }) {
   const shellOptions = { cwd, shell: true, detached: process.platform !== "win32" };
   const { scriptName, pkg } = scriptPhases;
 
-  const phaseEnv = (baseEnv, event, command) => ({
+  const phaseEnv = (baseEnv, event, command) => withPath({
     ...baseEnv,
-    ...npmScriptEnv({ pkg, pkgDir: cwd, event, script: command }),
-    PATH
-  });
+    ...npmScriptEnv({ pkg, pkgDir: cwd, event, script: command })
+  }, PATH);
 
   return {
     pre: { ...shellOptions, env: phaseEnv(process.env, `pre${scriptName}`, scriptPhases.pre) },

@@ -1,11 +1,19 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { fileURLToPath } from "node:url";
+import { execFile } from "node:child_process";
+import { access, mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { promisify } from "node:util";
 
 import { hasOwnReporter, prepareEnv } from "../src/runners/nodeTest.mjs";
+import { withTempDir } from "./gitTestHelpers.mjs";
 
-const REPORTER_PATH = fileURLToPath(new URL("../src/testEventReporter.mjs", import.meta.url));
-const TEST_REPORTER_FLAGS = `--test-reporter="${REPORTER_PATH}" --test-reporter-destination=stdout`;
+const execFileAsync = promisify(execFile);
+
+// A file:// URL, not a path: on Windows the ESM loader rejects "D:\\..." as an
+// unsupported URL scheme.
+const REPORTER_URL = new URL("../src/testEventReporter.mjs", import.meta.url).href;
+const TEST_REPORTER_FLAGS = `--test-reporter="${REPORTER_URL}" --test-reporter-destination=stdout`;
 
 describe("prepareEnv", () => {
   it("forces sumlyzer's own test reporter regardless of the child's TTY detection", () => {
@@ -37,6 +45,37 @@ describe("prepareEnv", () => {
       env.NODE_OPTIONS,
       `${TEST_REPORTER_FLAGS} --test-reporter=junit --test-reporter-destination="/tmp/my project/report.xml"`
     );
+  });
+
+  it("passes the reporter as a file:// URL so the ESM loader accepts it on Windows", () => {
+    const env = prepareEnv({});
+
+    assert.match(env.NODE_OPTIONS, /^--test-reporter="file:\/\/\//);
+  });
+
+  it("escapes backslashes and quotes in the junit path, which NODE_OPTIONS would otherwise swallow", () => {
+    const env = prepareEnv({}, String.raw`C:\Temp\say "hi"\report.xml`);
+
+    assert.ok(
+      env.NODE_OPTIONS.endsWith(String.raw` --test-reporter-destination="C:\\Temp\\say \"hi\"\\report.xml"`),
+      env.NODE_OPTIONS
+    );
+  });
+
+  it("produces a NODE_OPTIONS that node parses back to the exact junit path, backslashes included", async () => {
+    await withTempDir("sumlyzer-node-options-", async (dir) => {
+      // A backslash is a valid file name character on POSIX, so this exercises the
+      // same escaping a Windows path needs.
+      const junitDir = path.join(dir, String.raw`out\with\backslashes`);
+      await mkdir(junitDir);
+      await writeFile(path.join(dir, "ok.spec.mjs"), "import { test } from 'node:test'; test('ok', () => {});");
+      const junitPath = path.join(junitDir, "report.xml");
+
+      const env = prepareEnv({ ...process.env }, junitPath);
+      await execFileAsync(process.execPath, ["--test", "ok.spec.mjs"], { cwd: dir, env });
+
+      await assert.doesNotReject(access(junitPath));
+    });
   });
 
   it("strips NODE_TEST_CONTEXT so a nested node:test workspace never sees itself as a child run", () => {
