@@ -2,7 +2,6 @@ import { watch } from "node:fs";
 import path from "node:path";
 
 import { buildDependentsGraph, expandWithDependents } from "./graph.mjs";
-import { dim, workspaceName } from "./reporter.mjs";
 
 const IGNORED_SEGMENTS = new Set(["node_modules", "coverage", ".git"]);
 
@@ -51,8 +50,8 @@ function watchWorkspaces({ root, workspaces, onChange, isSuppressed, debounceMs 
 const SETTLE_COOLDOWN_MS = 500;
 
 /**
- * Runs `rerun` on each change, for the changed workspaces and their dependents,
- * until SIGINT/SIGTERM.
+ * Calls `rerun(affected, changedPaths)` on each change, with the changed workspaces
+ * and their dependents, until SIGINT/SIGTERM.
  * @returns {Promise<void>}
  */
 export function watchAndRerun({ root, allPaths, workspaces, rerun }) {
@@ -68,15 +67,11 @@ export function watchAndRerun({ root, allPaths, workspaces, rerun }) {
       return;
     }
 
-    const changedNames = [...changedPaths].map(workspaceName).join(", ");
-    const affectedNames = affected.map((workspace) => workspace.name).join(", ");
-    console.log(dim(`\n[watch] change detected in ${changedNames} → re-running: ${affectedNames}\n`));
-
     for (const workspace of affected) {
       settling.add(workspace.path);
     }
     try {
-      await rerun(affected);
+      await rerun(affected, changedPaths);
     }
     finally {
       setTimeout(() => {
@@ -91,7 +86,6 @@ export function watchAndRerun({ root, allPaths, workspaces, rerun }) {
 
   return new Promise((resolve) => {
     const stop = () => {
-      console.log(dim("\n[watch] stopping.\n"));
       watcher.close();
       resolve();
     };

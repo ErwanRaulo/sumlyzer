@@ -1,6 +1,5 @@
 import path from "node:path";
 
-import { dim, githubGroupSyntax, printWorkspaceResult } from "./reporter.mjs";
 import { WorkspaceLaunchError } from "./errors.mjs";
 import { killAll, runWorkspace, withInterruptHandling } from "./workspaceProcess.mjs";
 
@@ -20,9 +19,8 @@ function partitionResults(results, workspaces) {
   return { completed, skipped };
 }
 
-export async function runWorkspaces({ root, workspaces, scriptName, ff, concurrency, junitDir }) {
+export async function runWorkspaces({ root, workspaces, scriptName, ff, concurrency, junitDir, onStart, onResult }) {
   const results = new Array(workspaces.length);
-  const ciGroup = githubGroupSyntax(process.env);
   const activeChildren = new Set();
   let stopScheduling = false;
   let nextIndex = 0;
@@ -31,7 +29,7 @@ export async function runWorkspaces({ root, workspaces, scriptName, ff, concurre
     while (!stopScheduling && nextIndex < workspaces.length) {
       const index = nextIndex++;
       const workspace = workspaces[index];
-      process.stdout.write(dim(`running ${workspace.name}\n`));
+      onStart(workspace);
 
       const junitDestPath = junitDir ? path.join(junitDir, `${index}.xml`) : undefined;
 
@@ -45,7 +43,7 @@ export async function runWorkspaces({ root, workspaces, scriptName, ff, concurre
         throw new WorkspaceLaunchError(workspace.path, scriptName, error);
       }
       results[index] = result;
-      printWorkspaceResult(workspace.name, result, ciGroup);
+      onResult(workspace, result);
 
       if (result.exitCode !== 0 && ff) {
         stopScheduling = true;

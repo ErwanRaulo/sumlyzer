@@ -2,7 +2,7 @@ import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { buildJunitReport } from "./junit.mjs";
-import { red, dim, workspaceName } from "./reporter.mjs";
+import { workspaceName } from "./reporter.mjs";
 
 const DEFAULT_JUNIT_FILENAME = "junit.xml";
 
@@ -36,15 +36,11 @@ export async function writeJunitReport(root, junitPath, results) {
   const { entries, missing } = await collectJunitEntries(results);
   const destination = await resolveDestination(root, junitPath);
 
-  if (missing.length > 0) {
-    console.log(dim(`${missing.length} workspace(s) missing from the JUnit report: ${missing.join(", ")}`));
-  }
-
   try {
     await writeFile(destination, buildJunitReport(entries));
+    return { destination, missing, error: null };
   }
   catch (error) {
-    console.error(red(`Could not write JUnit report to "${destination}" (${error.message})`));
-    process.exitCode = 1;
+    return { destination, missing, error };
   }
 }

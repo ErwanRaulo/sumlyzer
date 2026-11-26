@@ -2,7 +2,6 @@ import { spawnSync } from "node:child_process";
 
 import { GitDiffError } from "./errors.mjs";
 import { buildDependentsGraph, expandWithDependents } from "./graph.mjs";
-import { dim } from "./reporter.mjs";
 
 function runGit(root, args, ref) {
   const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
@@ -68,43 +67,23 @@ export function selectChangedWorkspaces(resolvedWorkspaces, changedFiles) {
   return { workspaces, rootChangeFiles };
 }
 
-function resolveRef(root, explicitRef) {
-  if (explicitRef) {
-    return { ref: explicitRef, label: explicitRef };
-  }
-
-  const resolved = resolveDefaultRef(root);
-  console.log(dim(`--changed: no --ref given, comparing against "${resolved.label}" (${resolved.reason})`));
-  return resolved;
+export function resolveChangedRef(root, explicitRef) {
+  return explicitRef
+    ? { ref: explicitRef, label: explicitRef, reason: null, autoDetected: false }
+    : { ...resolveDefaultRef(root), autoDetected: true };
 }
 
-// Returns the changed workspaces and their dependents, or null when there's nothing to run (already reported).
-export function filterChangedWorkspaces({ root, allPaths, workspaces, ref: explicitRef }) {
-  const { ref, label } = resolveRef(root, explicitRef);
-
+// The workspaces changed since `ref`, plus their dependents.
+export function selectAffectedWorkspaces({ root, allPaths, workspaces, ref }) {
   const changedFiles = getChangedFiles(root, ref);
-  if (changedFiles.length === 0) {
-    console.log(dim(`No changes detected against "${label}".`));
-    return null;
-  }
-
   const { workspaces: changedPaths, rootChangeFiles } = selectChangedWorkspaces(allPaths, changedFiles);
-
-  if (rootChangeFiles.length > 0) {
-    const suffix = rootChangeFiles.length > 1 ? ` (+${rootChangeFiles.length - 1} more)` : "";
-    console.log(dim(`--changed: "${rootChangeFiles[0]}"${suffix} is outside every workspace, ignoring`));
-  }
-
   const affectedPaths = expandWithDependents(changedPaths, buildDependentsGraph(root, allPaths));
-  const filtered = workspaces.filter((workspace) => affectedPaths.has(workspace.path));
-  const dependents = filtered.filter((workspace) => !changedPaths.has(workspace.path)).map((workspace) => workspace.name);
-  const dependentsNote = dependents.length > 0 ? ` (incl. dependents: ${dependents.join(", ")})` : "";
-  console.log(dim(`--changed: running ${filtered.length}/${workspaces.length} workspace(s) with changes since "${label}"${dependentsNote}`));
+  const affected = workspaces.filter((workspace) => affectedPaths.has(workspace.path));
 
-  if (filtered.length === 0) {
-    console.log(dim("No eligible workspace changed."));
-    return null;
-  }
-
-  return filtered;
+  return {
+    hasChanges: changedFiles.length > 0,
+    rootChangeFiles,
+    affected,
+    dependents: affected.filter((workspace) => !changedPaths.has(workspace.path)).map((workspace) => workspace.name)
+  };
 }
