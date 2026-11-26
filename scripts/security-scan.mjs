@@ -17,7 +17,7 @@ for (const file of files) {
   console.log(`Analyzing ${file}`);
   const { warnings } = await scanner.analyseFile(file);
 
-  for (const {warning} of warnings) {
+  for (const warning of warnings) {
     console.log(`[${warning.severity}] ${file}: ${warning.kind}${warning.value ? ` (${warning.value})` : ""}`);
     if (warning.severity !== "Information") {
       findings.push({ file, ...warning });
