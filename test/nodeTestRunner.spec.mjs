@@ -10,8 +10,6 @@ import { withTempDir } from "./gitTestHelpers.mjs";
 
 const execFileAsync = promisify(execFile);
 
-// A file:// URL, not a path: on Windows the ESM loader rejects "D:\\..." as an
-// unsupported URL scheme.
 const REPORTER_URL = new URL("../src/testEventReporter.mjs", import.meta.url).href;
 const TEST_REPORTER_FLAGS = `--test-reporter="${REPORTER_URL}" --test-reporter-destination=stdout`;
 
@@ -47,13 +45,7 @@ describe("prepareEnv", () => {
     );
   });
 
-  it("passes the reporter as a file:// URL so the ESM loader accepts it on Windows", () => {
-    const env = prepareEnv({});
-
-    assert.match(env.NODE_OPTIONS, /^--test-reporter="file:\/\/\//);
-  });
-
-  it("escapes backslashes and quotes in the junit path, which NODE_OPTIONS would otherwise swallow", () => {
+  it("escapes backslashes and quotes in the junit path", () => {
     const env = prepareEnv({}, String.raw`C:\Temp\say "hi"\report.xml`);
 
     assert.ok(
@@ -62,10 +54,9 @@ describe("prepareEnv", () => {
     );
   });
 
-  it("produces a NODE_OPTIONS that node parses back to the exact junit path, backslashes included", async () => {
+  it("writes the junit report to the exact path, backslashes included", async () => {
     await withTempDir("sumlyzer-node-options-", async (dir) => {
-      // Nested directories on Windows, a single name containing backslashes on POSIX:
-      // either way the path NODE_OPTIONS has to carry contains backslashes.
+      // Nested directories on Windows, one directory name on POSIX.
       const junitDir = path.join(dir, String.raw`out\with\backslashes`);
       await mkdir(junitDir, { recursive: true });
       await writeFile(path.join(dir, "ok.spec.mjs"), "import { test } from 'node:test'; test('ok', () => {});");

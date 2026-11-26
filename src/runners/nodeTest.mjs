@@ -1,8 +1,7 @@
 import { stripNpmNoise } from "../parseOutput.mjs";
 import { parseReporterEvents, renderFailureRecap, renderSummaryText } from "../testEventReporter.mjs";
 
-// A file:// URL rather than a path: on Windows the ESM loader rejects an absolute
-// path such as "D:\\..." as an unsupported URL scheme.
+// URL, not path: Windows' ESM loader rejects "D:\..." specifiers.
 const TEST_EVENT_REPORTER_URL = new URL("../testEventReporter.mjs", import.meta.url).href;
 
 const OWN_TEST_REPORTER_FLAG = /--test-reporter(?!-destination)\b/;
@@ -11,8 +10,7 @@ export function hasOwnReporter(scriptCommand) {
   return OWN_TEST_REPORTER_FLAG.test(scriptCommand);
 }
 
-// Inside a quoted NODE_OPTIONS value, node treats "\\" as an escape character, so a
-// Windows path would silently lose its separators unless they're doubled.
+// node unescapes "\\" inside quoted NODE_OPTIONS values.
 function quoteNodeOption(value) {
   return `"${value.replace(/[\\"]/g, "\\$&")}"`;
 }
