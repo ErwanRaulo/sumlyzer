@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 
 import { GitDiffError } from "./errors.mjs";
+import { dim } from "./reporter.mjs";
 
 function runGit(root, args, ref) {
   const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
@@ -21,8 +22,7 @@ function tryGit(root, args) {
 }
 
 export function getChangedFiles(root, ref) {
-  // --end-of-options keeps a ref like "--output=<file>" from being parsed as an
-  // option, the trailing "--" keeps it from being parsed as a pathspec.
+  // The ref can't be read as an option (--end-of-options) or a pathspec (--).
   const tracked = runGit(root, ["diff", "--name-only", "--end-of-options", ref, "--"], ref);
   const untracked = runGit(root, ["ls-files", "--others", "--exclude-standard"], ref);
 
@@ -48,8 +48,7 @@ export function resolveDefaultRef(root) {
   return { ref: upstream, label: upstream, reason: "no merge-base found" };
 }
 
-// Attributes each changed file to the resolved workspace whose directory contains
-// it. A file outside every workspace directory is reported as "rootChangeFiles"
+// Maps each changed file to its innermost workspace; the rest are root changes.
 export function selectChangedWorkspaces(resolvedWorkspaces, changedFiles) {
   const sorted = [...resolvedWorkspaces].sort((a, b) => b.length - a.length);
   const workspaces = new Set();
@@ -66,4 +65,42 @@ export function selectChangedWorkspaces(resolvedWorkspaces, changedFiles) {
   }
 
   return { workspaces, rootChangeFiles };
+}
+
+function resolveRef(root, explicitRef) {
+  if (explicitRef) {
+    return { ref: explicitRef, label: explicitRef };
+  }
+
+  const resolved = resolveDefaultRef(root);
+  console.log(dim(`--changed: no --ref given, comparing against "${resolved.label}" (${resolved.reason})`));
+  return resolved;
+}
+
+// Returns the workspaces with changes, or null when there's nothing to run (already reported).
+export function filterChangedWorkspaces({ root, allPaths, workspaces, ref: explicitRef }) {
+  const { ref, label } = resolveRef(root, explicitRef);
+
+  const changedFiles = getChangedFiles(root, ref);
+  if (changedFiles.length === 0) {
+    console.log(dim(`No changes detected against "${label}".`));
+    return null;
+  }
+
+  const { workspaces: changedPaths, rootChangeFiles } = selectChangedWorkspaces(allPaths, changedFiles);
+
+  if (rootChangeFiles.length > 0) {
+    const suffix = rootChangeFiles.length > 1 ? ` (+${rootChangeFiles.length - 1} more)` : "";
+    console.log(dim(`--changed: "${rootChangeFiles[0]}"${suffix} is outside every workspace, ignoring`));
+  }
+
+  const filtered = workspaces.filter((workspace) => changedPaths.has(workspace.path));
+  console.log(dim(`--changed: running ${filtered.length}/${workspaces.length} workspace(s) with changes since "${label}"`));
+
+  if (filtered.length === 0) {
+    console.log(dim("No eligible workspace changed."));
+    return null;
+  }
+
+  return filtered;
 }

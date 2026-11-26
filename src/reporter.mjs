@@ -1,10 +1,10 @@
 import { styleText } from "node:util";
 
-export const green = (str) => styleText("green", str);
+const green = (str) => styleText("green", str);
 export const red = (str) => styleText("red", str);
-export const blue = (str) => styleText("blue", str);
+const blue = (str) => styleText("blue", str);
 export const dim = (str) => styleText("dim", str);
-export const bold = (str) => styleText("bold", str);
+const bold = (str) => styleText("bold", str);
 
 export function formatSeconds(ms) {
   const seconds = Number.isFinite(ms) ? ms / 1000 : 0;
