@@ -9,7 +9,7 @@ function partitionResults(results, workspaces) {
   const skipped = [];
   for (const [index, result] of results.entries()) {
     if (result === undefined) {
-      skipped.push(workspaces[index].path);
+      skipped.push(workspaces[index]);
     }
     else {
       completed.push(result);
@@ -40,7 +40,7 @@ export async function runWorkspaces({ root, workspaces, scriptName, ff, concurre
       catch (error) {
         stopScheduling = true;
         killAll(activeChildren);
-        throw new WorkspaceLaunchError(workspace.path, scriptName, error);
+        throw new WorkspaceLaunchError(workspace, scriptName, error);
       }
       results[index] = result;
       onResult(workspace, result);

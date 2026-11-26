@@ -1,5 +1,3 @@
-import { workspaceName } from "./reporter.mjs";
-
 export class NoWorkspacesError extends Error {
   constructor() {
     super("Your project does not have any workspaces.");
@@ -18,17 +16,17 @@ export class RootPackageJsonError extends Error {
 
 export class InvalidPackageJsonError extends Error {
   constructor(entries) {
-    super(entries.map(({ wsPath, message }) => `${workspaceName(wsPath)}: could not read its package.json (${message})`).join("\n"));
+    super(entries.map(({ workspace, message }) => `${workspace.name}: could not read its package.json (${message})`).join("\n"));
     this.name = "InvalidPackageJsonError";
     this.entries = entries;
   }
 }
 
 export class WorkspaceLaunchError extends Error {
-  constructor(wsPath, scriptName, cause) {
-    super(`${workspaceName(wsPath)}: could not launch "${scriptName}" (${cause.message})`, { cause });
+  constructor(workspace, scriptName, cause) {
+    super(`${workspace.name}: could not launch "${scriptName}" (${cause.message})`, { cause });
     this.name = "WorkspaceLaunchError";
-    this.wsPath = wsPath;
+    this.workspace = workspace;
     this.scriptName = scriptName;
   }
 }
