@@ -1,0 +1,7 @@
+{
+  "name": "spaces-fixture",
+  "private": true,
+  "workspaces": [
+    "workspaces/*"
+  ]
+}

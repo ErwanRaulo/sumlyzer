@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
-import { access, cp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -34,6 +34,7 @@ const LIFECYCLE_HOOKS_FIXTURE = path.join(TEST_PATH, "lifecycle-hooks-fixture");
 const BIN_RESOLUTION_FIXTURE = path.join(TEST_PATH, "bin-resolution-fixture");
 const COUNT_POLLUTION_FIXTURE = path.join(TEST_PATH, "count-pollution-fixture");
 const NPM_ENV_FIXTURE = path.join(TEST_PATH, "npm-env-fixture");
+const SPACES_FIXTURE = path.join(TEST_PATH, "spaces-fixture");
 
 async function pgrepMatches(pattern) {
   try {
@@ -93,20 +94,21 @@ async function gitFixture() {
   return { dir, baseline: baseline.trim() };
 }
 
-async function runCli(args, cwd, env) {
-  // Avoid suite's own CI run setting GITHUB_ACTIONS=true, which would trigger the fold markers.
-  // Also strip FORCE_COLOR: a shell that forces colors on would inject ANSI codes into stdout
-  // and break assertions that expect plain adjacent text.
-  // Same for the npm_package_*/npm_lifecycle_* vars npm sets when the suite itself runs via `npm test`.
-  const childEnv = Object.fromEntries(
+// Independent of how the suite runs: no CI fold markers (GITHUB_ACTIONS), no ANSI
+// codes (FORCE_COLOR), no npm_* vars from `npm test` itself.
+function isolatedEnv(overrides) {
+  const env = Object.fromEntries(
     Object.entries(process.env).filter(([key]) => !key.startsWith("npm_package_") && !key.startsWith("npm_lifecycle_"))
   );
-  delete childEnv.GITHUB_ACTIONS;
-  delete childEnv.FORCE_COLOR;
-  Object.assign(childEnv, env);
+  delete env.GITHUB_ACTIONS;
+  delete env.FORCE_COLOR;
 
+  return { ...env, ...overrides };
+}
+
+async function runCli(args, cwd, env) {
   try {
-    const { stdout, stderr } = await execFileAsync("node", [BIN, ...args], { cwd, env: childEnv });
+    const { stdout, stderr } = await execFileAsync("node", [BIN, ...args], { cwd, env: isolatedEnv(env) });
     return { stdout, stderr, code: 0 };
   }
   catch (error) {
@@ -512,30 +514,39 @@ describe("sumlyzer run behavior", () => {
     });
   });
 
-  it("exposes the same npm_package_* and npm_lifecycle_* variables to each phase as npm run does", async () => {
-    await withTempDir("sumlyzer-npm-env-", async (markerDir) => {
-      // Simulates sumlyzer itself being launched from the root's own npm script.
-      const { code } = await runCli([], NPM_ENV_FIXTURE, {
-        NPM_ENV_MARKER_DIR: markerDir,
-        npm_package_name: "npm-env-fixture",
-        npm_package_version: "9.9.9",
-        npm_lifecycle_event: "test:all"
-      });
+  it("runs a workspace whose path contains a space, with its JUnit report", async () => {
+    await withTempDir("sumlyzer spaces ", async (dir) => {
+      const reportPath = path.join(dir, "report.xml");
+      const { stdout, code } = await runCli(["--junit", reportPath], SPACES_FIXTURE);
 
+      assert.equal(code, 0);
+      assert.match(stdout, /✓ my app/);
+      assert.match(await readFile(reportPath, "utf8"), /<testcase name="runs from a directory with a space"/);
+    });
+  });
+
+  it("exposes the same npm_package_* and npm_lifecycle_* variables to each phase as npm run", async () => {
+    await withTempDir("sumlyzer-npm-env-", async (dir) => {
+      // As if launched from the root's own npm script.
+      const parentEnv = { npm_package_name: "npm-env-fixture", npm_package_version: "9.9.9", npm_lifecycle_event: "test:all" };
+      const npmDir = path.join(dir, "npm");
+      const sumlyzerDir = path.join(dir, "sumlyzer");
+      await Promise.all([mkdir(npmDir), mkdir(sumlyzerDir)]);
+
+      await execFileAsync("npm", ["test", "-w", "env-ws"], {
+        cwd: NPM_ENV_FIXTURE,
+        env: isolatedEnv({ ...parentEnv, NPM_ENV_MARKER_DIR: npmDir }),
+        shell: process.platform === "win32"
+      });
+      const { code } = await runCli([], NPM_ENV_FIXTURE, { ...parentEnv, NPM_ENV_MARKER_DIR: sumlyzerDir });
       assert.equal(code, 0);
 
       for (const event of ["pretest", "test", "posttest"]) {
-        const vars = JSON.parse(await readFile(path.join(markerDir, `${event}.json`), "utf8"));
+        const readVars = async (markerDir) => JSON.parse(await readFile(path.join(markerDir, `${event}.json`), "utf8"));
+        const [npmVars, sumlyzerVars] = await Promise.all([readVars(npmDir), readVars(sumlyzerDir)]);
 
-        assert.deepEqual(vars, {
-          npm_lifecycle_event: event,
-          npm_lifecycle_script: "node ../../dump-npm-env.mjs",
-          npm_package_json: path.join(NPM_ENV_FIXTURE, "workspaces", "env-ws", "package.json"),
-          npm_package_name: "env-ws",
-          npm_package_version: "2.3.4",
-          npm_package_config_port: "8080",
-          npm_package_engines_node: ">=22"
-        });
+        assert.equal(npmVars.npm_package_name, "env-ws");
+        assert.deepEqual(sumlyzerVars, npmVars);
       }
     });
   });
