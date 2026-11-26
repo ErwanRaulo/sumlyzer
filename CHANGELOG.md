@@ -18,6 +18,10 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   sumlyzer itself was launched from an npm script.
 - A missing or invalid root `package.json` now prints a one-line error
   instead of a stack trace.
+- Windows support: every `node:test` workspace crashed there
+  (`ERR_UNSUPPORTED_ESM_URL_SCHEME`), `--junit` paths lost their
+  separators, and `--changed`/`--watch` never matched a workspace. CI now
+  runs on Linux, macOS and Windows.
 
 ## [1.4.1] - 2026-11-25
 

@@ -20,7 +20,8 @@ output. Sumlyzer fixes that, and runs workspaces concurrently too (~3.5x
 faster, see [Benchmark](#benchmark)).
 
 Scope: **npm workspaces** running **`node:test`** only, for now. No
-pnpm/yarn, no Jest/Vitest/Mocha.
+pnpm/yarn, no Jest/Vitest/Mocha. Tested on Linux, macOS and Windows, with
+Node.js 22, 24 and 26.
 
 ## Install
 
