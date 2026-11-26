@@ -25,6 +25,7 @@ npm ci
 
 ```
 npm test
+npm run typecheck
 ```
 
 Try the CLI against a real npm workspaces project while you're at it:

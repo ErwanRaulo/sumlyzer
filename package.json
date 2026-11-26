@@ -23,7 +23,8 @@
     "security-scan": "node scripts/security-scan.mjs",
     "postversion": "git push && git push --tags",
     "prepublishOnly": "npm test",
-    "release": "npm publish --dry-run"
+    "release": "npm publish --dry-run",
+    "typecheck": "tsc -p jsconfig.json"
   },
   "keywords": [
     "npm workspaces test output",
@@ -56,7 +57,8 @@
   "devDependencies": {
     "@nodesecure/js-x-ray": "^16.2.0",
     "@types/node": "^26.6.10",
-    "fast-xml-parser": "^5.12.1"
+    "fast-xml-parser": "^5.12.1",
+    "typescript": "~6.0.3"
   },
   "dependencies": {
     "glob": "^14.0.6"

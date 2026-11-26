@@ -15,7 +15,7 @@ function matchWorkspace(relPath, workspaces) {
   return workspaces.find((wsPath) => normalized === wsPath || normalized.startsWith(`${wsPath}/`));
 }
 
-function watchWorkspaces({ root, workspaces, onChange, debounceMs = 300, isSuppressed = () => false }) {
+function watchWorkspaces({ root, workspaces, onChange, isSuppressed, debounceMs = 300 }) {
   const pending = new Set();
   let timer = null;
 
@@ -50,8 +50,11 @@ function watchWorkspaces({ root, workspaces, onChange, debounceMs = 300, isSuppr
 // exits; ignoring them briefly stops the workspace from re-triggering itself forever.
 const SETTLE_COOLDOWN_MS = 500;
 
-// Runs `rerun` on each change, for the changed workspaces and their dependents,
-// until SIGINT/SIGTERM.
+/**
+ * Runs `rerun` on each change, for the changed workspaces and their dependents,
+ * until SIGINT/SIGTERM.
+ * @returns {Promise<void>}
+ */
 export function watchAndRerun({ root, allPaths, workspaces, rerun }) {
   const dependentsGraph = buildDependentsGraph(root, allPaths);
   const byPath = new Map(workspaces.map((workspace) => [workspace.path, workspace]));
