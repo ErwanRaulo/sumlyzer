@@ -29,6 +29,7 @@ const GLOB_WORKSPACES_FIXTURE = path.join(TEST_PATH, "glob-workspaces-fixture");
 const INTERRUPT_FIXTURE = path.join(TEST_PATH, "interrupt-fixture");
 const INTERRUPT_MARKER = "sumlyzer-interrupt-fixture-marker";
 const CHANGED_FIXTURE = path.join(TEST_PATH, "changed-fixture");
+const CHANGED_DEPENDENTS_FIXTURE = path.join(TEST_PATH, "changed-dependents-fixture");
 const LAUNCH_ERROR_FIXTURE = path.join(TEST_PATH, "launch-error-fixture");
 const LIFECYCLE_HOOKS_FIXTURE = path.join(TEST_PATH, "lifecycle-hooks-fixture");
 const BIN_RESOLUTION_FIXTURE = path.join(TEST_PATH, "bin-resolution-fixture");
@@ -84,8 +85,8 @@ async function launchErrorFixture() {
   return copyFixture(LAUNCH_ERROR_FIXTURE, "sumlyzer-launch-error-");
 }
 
-async function gitFixture() {
-  const dir = await copyFixture(CHANGED_FIXTURE, "sumlyzer-changed-");
+async function gitFixture(fixture = CHANGED_FIXTURE) {
+  const dir = await copyFixture(fixture, "sumlyzer-changed-");
 
   await git(["init", "-q"], dir);
   await commitAll(dir, "baseline");
@@ -663,6 +664,31 @@ describe("sumlyzer run behavior", () => {
 });
 
 describe("sumlyzer --changed behavior", () => {
+  it("also runs the workspaces that depend on a changed one, transitively", async () => {
+    const { dir } = await gitFixture(CHANGED_DEPENDENTS_FIXTURE);
+    await writeFile(path.join(dir, "workspaces/lib/index.mjs"), "export {};\n");
+
+    const { stdout, code } = await runCli(["--changed"], dir);
+
+    assert.equal(code, 0);
+    assert.match(stdout, /running 3\/4 workspace\(s\) with changes since "HEAD" \(incl\. dependents: app, e2e\)/);
+    assert.match(stdout, /✓ lib/);
+    assert.match(stdout, /✓ app/);
+    assert.match(stdout, /✓ e2e/);
+    assert.doesNotMatch(stdout, /other/);
+  });
+
+  it("doesn't run the dependencies of a changed workspace", async () => {
+    const { dir } = await gitFixture(CHANGED_DEPENDENTS_FIXTURE);
+    await writeFile(path.join(dir, "workspaces/app/index.mjs"), "export {};\n");
+
+    const { stdout, code } = await runCli(["--changed"], dir);
+
+    assert.equal(code, 0);
+    assert.match(stdout, /running 2\/4 workspace\(s\) with changes since "HEAD" \(incl\. dependents: e2e\)/);
+    assert.doesNotMatch(stdout, /✓ lib/);
+  });
+
   it("runs only the workspace with a changed file", async () => {
     const { dir } = await gitFixture();
     await writeFile(path.join(dir, "workspaces/app-a/NOTES.md"), "note\n");

@@ -6,6 +6,10 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- `--changed` also runs the workspaces that depend on a changed one, like `--watch`.
+
 ## [1.5.0] - 2026-11-26
 
 ### Added

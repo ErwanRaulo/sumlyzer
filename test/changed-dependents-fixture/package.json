@@ -1,0 +1,7 @@
+{
+  "name": "changed-dependents-fixture",
+  "private": true,
+  "workspaces": [
+    "workspaces/*"
+  ]
+}

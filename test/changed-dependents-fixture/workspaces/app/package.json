@@ -1,0 +1,10 @@
+{
+  "name": "app",
+  "private": true,
+  "dependencies": {
+    "lib": "*"
+  },
+  "scripts": {
+    "test": "node --test \"./test/*.spec.mjs\""
+  }
+}
