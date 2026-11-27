@@ -873,14 +873,14 @@
         </span>
       </span>
       <span class="mono">sumlyzer</span>
-      <span class="mono version">v1.3.1</span>
+      <span class="mono version" id="version">v1.5.0</span>
     </a>
     <div class="links">
       <a href="#fail-fast">fail-fast</a>
       <a href="#summary">summary</a>
       <a href="#changed">--changed</a>
       <a href="#ci">CI</a>
-      <a href="#watch"><span class="nav-soon-dot" aria-hidden="true"></span> watch mode</a>
+      <a href="#watch">watch mode</a>
       <a href="#mcp"><span class="nav-soon-dot" aria-hidden="true"></span> MCP server</a>
       <a href="https://www.npmjs.com/package/sumlyzer" target="_blank" rel="noopener">npm</a>
     </div>
@@ -966,7 +966,7 @@
           <div class="kicker">Fail-fast </div>
           <h2>Stop the moment something breaks</h2>
           <p>Add <span class="flag">--ff</span> and sumlyzer stops scheduling new workspaces the
-          moment one fails. The behavior <a href="https://github.com/npm/rfcs/issues/575" target="_blank" rel="noopener">requested from npm itself</a>, years before it ever landed.</p>
+          moment one fails. The behavior <a href="https://github.com/npm/rfcs/issues/575" target="_blank" rel="noopener">requested from npm itself</a>, still an open RFC.</p>
         </div>
         <div class="illus glass reveal">
           <div class="ffdemo">
@@ -1021,7 +1021,7 @@
       <div class="grid2">
         <div>
           <div class="kicker">Respects your time</div>
-          <h2>Parallèle execution</h2>
+          <h2>Parallel execution</h2>
           <p><span class="flag">-c, --concurrency &lt;n&gt;</span> runs up to <code class="mono">n</code>
           workspaces' scripts at the same time, something <code class="mono">npm</code> doesn't do natively.</p>
           <p>Measured on a real 15-workspace monorepo: <span class="stat">~3.5x faster</span> at
@@ -1057,7 +1057,7 @@
           <div class="kicker">Respect your workflow</div>
           <h2>Rerun what's changed</h2><br>
 
-          <p><span class="flag">--changed</span> run workspace that owns every file in your <i class="mono">git diff</i></p>
+          <p><span class="flag">--changed</span> runs the workspaces that own a file in your <i class="mono">git diff</i>, plus the ones that depend on them.</p>
           <p>The git ref auto-detects: uncommitted changes diff against <code class="mono">HEAD</code>,
           a clean branch diffs against its upstream merge-base.</p>
           <p>In your CI, pass <span class="flag">--ref</span> for a custom target branch.</p>
@@ -1117,18 +1117,16 @@
     </div>
   </section>
 
-  <section class="feature roadmap-feature" id="watch">
+  <section class="feature" id="watch">
     <div class="wrap">
       <div class="grid2">
         <div>
-          <span class="pill roadmap"><span class="roadmap-dot" aria-hidden="true"></span> On the roadmap</span>
-          <h2 style="margin-top:12px;">Watch mode</h2>
-          <p>Today, <span class="flag">--changed</span> only runs the workspaces your diff touches
-          directly. Watch mode will walk the full workspace dependency graph with a topological
-          sort, so a change in <code class="mono">core</code> automatically re-runs everything
-          downstream that depends on it, in the right order.</p>
+          <div class="kicker">Stay in the loop</div>
+          <h2>Watch mode</h2>
+          <p><span class="flag">-w, --watch</span> runs once, then re-runs a workspace when one of
+          its files changes, plus every workspace that depends on it.</p>
         </div>
-        <div class="illus glass reveal roadmap-illus">
+        <div class="illus glass reveal">
           <div class="graph" aria-hidden="true">
             <div class="gnode" style="--i:0">core</div>
             <span class="garrow" style="--i:0">&rarr;</span>
@@ -1136,7 +1134,7 @@
             <span class="garrow" style="--i:1">&rarr;</span>
             <div class="gnode" style="--i:2">web</div>
           </div>
-          <p class="wsgrid-caption" style="text-align:center;">A change in <strong>core</strong> ripples downstream, in topological order</p>
+          <p class="wsgrid-caption" style="text-align:center;">A change in <strong>core</strong> re-runs everything downstream</p>
         </div>
       </div>
     </div>
@@ -1183,8 +1181,10 @@
             <tr><td class="flag">--ff</td><td>off</td><td>fail fast: stop at the first failing workspace</td></tr>
             <tr><td class="flag">--junit &lt;path&gt;</td><td>off</td><td>write an aggregated JUnit XML report to &lt;path&gt;</td></tr>
             <tr><td class="flag">-c, --concurrency &lt;n&gt;</td><td>1</td><td>run up to &lt;n&gt; workspaces at once</td></tr>
-            <tr><td class="flag">--changed</td><td>off</td><td>only run workspaces with changed files</td></tr>
+            <tr><td class="flag">--changed</td><td>off</td><td>only run changed workspaces and their dependents</td></tr>
             <tr><td class="flag">--ref &lt;ref&gt;</td><td>auto-detect</td><td>git ref to diff against for --changed</td></tr>
+            <tr><td class="flag">-w, --watch</td><td>off</td><td>re-run on file change, with dependents</td></tr>
+            <tr><td class="flag">-v, --version</td><td></td><td>print the version</td></tr>
             <tr><td class="flag">-h, --help</td><td></td><td>print usage</td></tr>
           </tbody>
         </table>
@@ -1213,7 +1213,7 @@
 
 <footer>
   <div class="wrap">
-    <span>MIT licensed &middot; requires Node.js &ge;22 &middot; npm workspaces + node:test only</span>
+    <span>MIT licensed &middot; Node.js &ge;22 on Linux, macOS &amp; Windows &middot; npm workspaces + node:test only</span>
     <div class="links">
       <a href="https://github.com/ErwanRaulo/sumlyzer#readme" target="_blank" rel="noopener">Full README</a>
       <a href="https://github.com/ErwanRaulo/sumlyzer/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener">Contributing</a>
@@ -1301,6 +1301,13 @@
       function (repo) { return repo.stargazers_count; },
       function (count) { return '<span class="star-ico">&#9733;</span> ' + count; }
     );
+
+    fetch('https://registry.npmjs.org/sumlyzer/latest')
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (pkg) {
+        if (pkg && pkg.version) document.getElementById('version').textContent = 'v' + pkg.version;
+      })
+      .catch(function () {});
 
     populateChip(
       document.getElementById('downloadsChip'),
